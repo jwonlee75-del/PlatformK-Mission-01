@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint + paper demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python sources
+        run: |
+          python -m compileall -q -f .
+          echo "compileall OK"
+
+      - name: Validate config.json
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cfg = json.loads(Path("config.json").read_text(encoding="utf-8"))
+          assert cfg.get("symbol") == "367380"
+          assert cfg["grid"]["levels"] == 5
+          assert float(cfg["grid"]["spacing_pct"]) == 0.002
+          assert float(cfg["grid"]["tp_pct"]) == 0.002
+          tg = cfg.get("telegram") or {}
+          assert "chat_id" not in tg, "chat_id must not be committed"
+          print("config OK:", cfg["symbol"], cfg["grid"]["levels"], "levels")
+          PY
+
+      - name: Guard against committed secrets
+        run: |
+          if git grep -nE '840503590|TELEGRAM_BOT_TOKEN\s*[:=]\s*["'\''][^"'\'']+|gho_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|BEGIN (RSA |OPENSSH )?PRIVATE' -- '*.py' '*.json' '*.md' '*.yml' '*.yaml' '*.sh' '*.html'; then
+            echo "Possible secret found in tree" >&2
+            exit 1
+          fi
+          echo "secret guard OK"
+
+      - name: Paper demo (no live orders)
+        run: |
+          # Demo writes positions under /workspace path in config — override for CI cwd
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cfg = json.loads(Path("config.json").read_text(encoding="utf-8"))
+          cfg.setdefault("persistence", {})["file"] = str(Path("positions.ci.json").resolve())
+          Path("config.ci.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print("wrote config.ci.json")
+          PY
+          python main.py --mode paper --scenario demo --config config.ci.json
+
+      - name: Cleanup CI artifacts
+        if: always()
+        run: rm -f positions.ci.json config.ci.json

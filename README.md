@@ -134,3 +134,12 @@ Live / live-dry / dry-loop: `open-trading-api/examples_llm` + `pandas`, `PyYAML`
 - 래칫 실주문 경로의 장중 검증 (승인 후)
 - 텔레그램 알림 실계정 연동 확인
 - bootstrap 직후 `--run-session` 이어붙이기(orders_state ODNO 복원 — 구조는 구현됨)
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) on `main` push/PR:
+
+- `compileall` for all Python sources
+- `config.json` shape checks (and no committed `chat_id`)
+- basic secret-pattern guard
+- paper demo only (`--mode paper --scenario demo`) — **no live KIS orders**
