@@ -5,6 +5,7 @@ Usage:
   python3 main.py --mode paper --scenario demo
   python3 main.py --mode live-dry
   python3 main.py --mode live --bootstrap-grid --i-approve-live-orders
+  python3 morning_after_approve.py --i-approve-live-orders
 """
 from __future__ import annotations
 
@@ -347,18 +348,33 @@ def run_live_bootstrap(cfg: dict[str, Any], args: argparse.Namespace) -> int:
         spacing=engine.grid.spacing,
         lines=list(engine.grid.buy_lines),
     )
-    # positions stay empty until buys fill; keep file meta for operators
-    save_positions(
-        engine.positions,
-        cfg["persistence"]["file"],
-        meta={
-            "note": "live bootstrap — buys resting, no fills yet",
-            "ref_price": engine.grid.ref_price,
-            "spacing": engine.grid.spacing,
-            "buy_lines": list(engine.grid.buy_lines),
-            "order_ids": [o.order_id for o in placed],
-        },
-    )
+    # Do NOT wipe overnight holdings. Prefer morning_after_approve.py for
+    # full restore (TP + ledger + missing buys). Bootstrap only records buy meta
+    # when positions file is empty.
+    pos_path = Path(cfg["persistence"]["file"])
+    existing_pos = []
+    if pos_path.exists():
+        try:
+            existing_pos = (json.loads(pos_path.read_text(encoding="utf-8")).get("positions") or [])
+        except Exception:  # noqa: BLE001
+            existing_pos = []
+    if existing_pos:
+        print(
+            f"bootstrap: keeping {len(existing_pos)} existing positions "
+            f"(use morning_after_approve.py to restore TPs)"
+        )
+    else:
+        save_positions(
+            engine.positions,
+            cfg["persistence"]["file"],
+            meta={
+                "note": "live bootstrap — buys resting, no fills yet",
+                "ref_price": engine.grid.ref_price,
+                "spacing": engine.grid.spacing,
+                "buy_lines": list(engine.grid.buy_lines),
+                "order_ids": [o.order_id for o in placed],
+            },
+        )
     print(f"placed={len(placed)} orders_state={ORDERS_STATE_PATH}")
     lines_out: list[str] = []
     for o in placed:
@@ -372,14 +388,23 @@ def run_live_bootstrap(cfg: dict[str, Any], args: argparse.Namespace) -> int:
             f"• {o.qty}주 @{o.price:,} (odno={meta.get('odno') or o.order_id})"
         )
     print("Bootstrap done — exiting (no session loop).")
+    # Prefer morning_after_approve.py for overnight TP restore + ledger sync.
+    levels_n = int(cfg.get("grid", {}).get("levels", 5))
     try:
-        if len(placed) >= int(cfg.get("grid", {}).get("levels", 5)):
+        if len(placed) >= levels_n:
             telegram_alert(
                 "✅ 그리드 실주문 정상 접수\n\n"
                 f"종목: {cfg.get('symbol')} ({cfg.get('symbol_name', '')})\n"
                 f"기준가: {engine.grid.ref_price:,}\n"
                 f"간격: {engine.grid.spacing}\n"
                 f"접수 {len(placed)}건:\n" + "\n".join(lines_out),
+                cfg=cfg,
+            )
+        else:
+            telegram_alert(
+                "⚠️ 그리드 실주문 부분 접수\n\n"
+                f"기대 {levels_n}건 중 {len(placed)}건만 접수.\n"
+                + ("\n".join(lines_out) if lines_out else "(주문 없음)"),
                 cfg=cfg,
             )
 
@@ -392,13 +417,8 @@ def run_live_bootstrap(cfg: dict[str, Any], args: argparse.Namespace) -> int:
             )
         except Exception as _e:  # noqa: BLE001
             print(f"[telegram_summary] skip: {type(_e).__name__}")
-        else:
-            telegram_alert(
-                "⚠️ 그리드 실주문 부분 접수\n\n"
-                f"기대 {cfg.get('grid', {}).get('levels')}건 중 {len(placed)}건만 접수.\n"
-                + ("\n".join(lines_out) if lines_out else "(주문 없음)"),
-                cfg=cfg,
-            )
+
+        if len(placed) < levels_n:
             return 1 if not placed else 0
     except Exception as e:  # noqa: BLE001
         telegram_alert(f"❌ 그리드 알림 전송 실패: {type(e).__name__}", cfg=cfg)
