@@ -80,7 +80,7 @@
     "capital_gains_tax_pct": 0.154,
     "note": "verify against actual KIS account fees"
   },
-  "updated_at": "2026-09-09T10:21:00+09:00",
+  "updated_at": "2026-09-11T07:47:56+09:00",
   "param_choice": {
     "spacing_pct": 0.002,
     "levels": 5,
@@ -92,5 +92,38 @@
     "notify_on_bootstrap_error": true,
     "notify_on_session_api_fail": true,
     "chat_id_note": "Set TELEGRAM_CHAT_ID env or box-secrets TELEGRAM_CHAT_ID (not committed)"
+  },
+  "cooldown": {
+    "enabled": true,
+    "after_tp_seconds": 60,
+    "scope": "same_grid_line",
+    "trigger": "tp_sell_fill",
+    "blocks_recycle_rebuy": true
+  },
+  "safety_freeze": {
+    "enabled": true,
+    "combine": "or",
+    "rules": [
+      {
+        "id": "ma20_breach",
+        "condition": "last <= ma20_daily_close * 0.98",
+        "action": "freeze_new_buys",
+        "ma": {
+          "type": "sma",
+          "period": 20,
+          "bar": "daily",
+          "price": "close",
+          "source": "KIS daily chart"
+        }
+      },
+      {
+        "id": "day_drop_from_base",
+        "condition": "last <= session_base_0905 * 0.97",
+        "baseline": "session_base_0905",
+        "action": "freeze_new_buys"
+      }
+    ],
+    "unfreeze": "auto_when_rules_clear_or_next_session",
+    "does_not_cancel_existing_tp_sells": true
   }
 }

@@ -597,7 +597,34 @@ def run_live_session(
         log_fn("session.balance_fail", str(e), {"error": type(e).__name__})
         print(f"WARNING: balance inquiry failed: {type(e).__name__}: {e}")
 
-    engine = GridEngine(cfg, engine_broker, log=log_fn)
+    def _alert(msg: str) -> None:
+        telegram_alert(msg, cfg=cfg)
+
+    sma20_fn = None
+    try:
+        from ma_provider import KisDailySmaProvider, StubMaProvider
+
+        if cfg.get("safety_freeze", {}).get("enabled"):
+            # Prefer KIS daily chart when connected; fall back to injectable stub.
+            kis_sma = KisDailySmaProvider(
+                cfg["symbol"],
+                env_dv=str(cfg.get("safety", {}).get("kis_env_dv", "real")),
+            )
+            stub = StubMaProvider(getter=lambda: kis_sma.sma(20))
+
+            def sma20_fn() -> float | None:
+                return stub.sma(20)
+    except Exception as e:  # noqa: BLE001
+        print(f"[sma20] provider init skipped: {type(e).__name__}")
+        sma20_fn = None
+
+    engine = GridEngine(
+        cfg,
+        engine_broker,
+        log=log_fn,
+        alert=_alert,
+        sma20_provider=sma20_fn,
+    )
 
     # Wire live fill polling into engine when not dry
     if not dry:

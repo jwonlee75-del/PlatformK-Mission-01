@@ -1,0 +1,120 @@
+{
+  "for_bot": "퀀트트레이딩",
+  "symbol": "367380",
+  "symbol_name": "ACE 미국나스닥100",
+  "proposed_at": "2026-09-11T07:43:00+09:00",
+  "source": "Ported from 김프로/091170 ops definitions; adapted to equal-% grid (grid_line), not slots.",
+  "status": "applied",
+  "cooldown": {
+    "enabled": true,
+    "after_tp_seconds": 60,
+    "trigger": "on_sell_fill_that_is_take_profit",
+    "scope": "same_grid_line",
+    "scope_note": "367380 has no slots. Key cooldown by Position.grid_line (the line used for recycle rebuy). Different grid_lines are independent.",
+    "blocks": [
+      "recycle_rebuy_at_grid_line",
+      "any_new_buy_at_same_grid_line_price"
+    ],
+    "does_not_block": [
+      "existing_open_tp_sells",
+      "ratchet_reorder_of_other_unfilled_buys",
+      "session_end_cancel_unfilled_buys",
+      "morning_bootstrap_initial_grid"
+    ],
+    "timer_start": "exchange_sell_fill_timestamp_or_local_detect_time",
+    "timer_end": "fill_time + 60s Asia/Seoul wall clock",
+    "behavior_while_cooling": "do_not_submit_buy; keep TP/sell state; log cooldown_block",
+    "after_cooldown": "if still in session and limits allow and not safety_frozen, place rebuy at grid_line per existing recycle rule",
+    "purpose": "prevent immediate rebound rebuy after take-profit (whipsaw fee burn)"
+  },
+  "safety_freeze": {
+    "enabled": true,
+    "action": "freeze_new_buys",
+    "does_not_cancel_existing_tp_sells": true,
+    "does_not_cancel_existing_open_buys_unless_other_rules_say_so": true,
+    "blocks": [
+      "bootstrap_new_buy_lines",
+      "recycle_rebuy",
+      "ratchet_replace_buys",
+      "any_new_buy_submit"
+    ],
+    "allows": [
+      "tp_sell_management",
+      "fill_polling",
+      "session_end_cancel_unfilled_buys",
+      "telegram_summary"
+    ],
+    "rules": [
+      {
+        "id": "ma20_breach",
+        "condition": "last <= sma20_daily_close * 0.98",
+        "ma": {
+          "type": "sma",
+          "period": 20,
+          "bar": "daily",
+          "price": "close",
+          "symbol": "367380",
+          "source": "KIS domestic daily chart"
+        },
+        "check_cadence": "on_session_start_and_each_session_loop_tick",
+        "action": "freeze_new_buys"
+      },
+      {
+        "id": "day_drop_from_base",
+        "condition": "last <= session_base * 0.97",
+        "baseline": "session_base_0905",
+        "baseline_definition": "For 367380: price used at session start to build the day's grid (09:05 last / ref), same role as 091170 base. NOT prior close.",
+        "action": "freeze_new_buys"
+      }
+    ],
+    "combine": "OR",
+    "unfreeze": {
+      "policy": "auto_clear_when_all_rules_false_on_next_tick_OR_next_session_recompute",
+      "preferred": "next_tick_auto_clear_when_last > sma20*0.98 AND last > base*0.97",
+      "notify": "Telegram + Grok note on freeze enter/exit"
+    }
+  },
+  "config_json_patch": {
+    "cooldown": {
+      "enabled": true,
+      "after_tp_seconds": 60,
+      "scope": "same_grid_line",
+      "trigger": "tp_sell_fill",
+      "blocks_recycle_rebuy": true
+    },
+    "safety_freeze": {
+      "enabled": true,
+      "combine": "or",
+      "rules": [
+        {
+          "id": "ma20_breach",
+          "condition": "last <= ma20_daily_close * 0.98",
+          "action": "freeze_new_buys",
+          "ma": {
+            "type": "sma",
+            "period": 20,
+            "bar": "daily",
+            "price": "close",
+            "source": "KIS daily chart"
+          }
+        },
+        {
+          "id": "day_drop_from_base",
+          "condition": "last <= session_base_0905 * 0.97",
+          "baseline": "session_base_0905",
+          "action": "freeze_new_buys"
+        }
+      ],
+      "unfreeze": "auto_when_rules_clear_or_next_session",
+      "does_not_cancel_existing_tp_sells": true
+    }
+  },
+  "acceptance_tests": [
+    "TP sell fill then immediate recycle attempt within 60s → blocked; after 60s → rebuy allowed if not frozen",
+    "last drops to <= base*0.97 → no new buys; open TP sells remain",
+    "last <= sma20*0.98 → no new buys including ratchet replace",
+    "freeze clears when both conditions false → recycle/ratchet may resume within limits"
+  ],
+  "applied_at": "2026-09-11T07:47:56+09:00",
+  "enabled": true
+}

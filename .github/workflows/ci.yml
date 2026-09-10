@@ -39,6 +39,8 @@ jobs:
           assert cfg["grid"]["levels"] == 5
           assert float(cfg["grid"]["spacing_pct"]) == 0.002
           assert float(cfg["grid"]["tp_pct"]) == 0.002
+          assert cfg.get("cooldown", {}).get("enabled") is True
+          assert cfg.get("safety_freeze", {}).get("enabled") is True
           tg = cfg.get("telegram") or {}
           assert "chat_id" not in tg, "chat_id must not be committed"
           print("config OK:", cfg["symbol"], cfg["grid"]["levels"], "levels")
@@ -79,6 +81,10 @@ jobs:
               raise SystemExit(1)
           print("secret guard OK")
           PY
+
+      - name: Ops guards unit tests
+        run: |
+          python -m unittest test_ops_guards -v
 
       - name: Paper demo (no live orders)
         run: |
