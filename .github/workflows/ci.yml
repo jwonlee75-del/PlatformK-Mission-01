@@ -46,21 +46,50 @@ jobs:
 
       - name: Guard against committed secrets
         run: |
-          if git grep -nE '840503590|TELEGRAM_BOT_TOKEN\s*[:=]\s*["'\''][^"'\'']+|gho_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|BEGIN (RSA |OPENSSH )?PRIVATE' -- '*.py' '*.json' '*.md' '*.yml' '*.yaml' '*.sh' '*.html'; then
-            echo "Possible secret found in tree" >&2
-            exit 1
-          fi
-          echo "secret guard OK"
+          python - <<'PY'
+          import re
+          import subprocess
+          from pathlib import Path
+
+          # Patterns only in this step. Workflow filenames are skipped.
+          # Numeric chat_id is blocked in the config.json step above.
+          pats = [
+              re.compile(r"TELEGRAM_BOT_TOKEN\s*[:=]\s*['\"][^'\"]+"),
+              re.compile(r"gho_[A-Za-z0-9]{20,}"),
+              re.compile(r"ghp_[A-Za-z0-9]{20,}"),
+              re.compile(r"BEGIN (RSA |OPENSSH )?PRIVATE"),
+              re.compile(r"app[_-]?secret\s*[:=]\s*['\"][^'\"]+", re.I),
+              re.compile(r"app[_-]?key\s*[:=]\s*['\"][^'\"]+", re.I),
+          ]
+          files = subprocess.check_output(
+              ["git", "ls-files", "*.py", "*.json", "*.md", "*.yml", "*.yaml", "*.sh", "*.html"],
+              text=True,
+          ).splitlines()
+          bad = []
+          for rel in files:
+              if rel.startswith(".github/workflows/"):
+                  continue
+              text = Path(rel).read_text(encoding="utf-8", errors="ignore")
+              for pat in pats:
+                  if pat.search(text):
+                      bad.append(f"{rel}: matched {pat.pattern}")
+          if bad:
+              print("Possible secret found:")
+              print("\n".join(bad[:50]))
+              raise SystemExit(1)
+          print("secret guard OK")
+          PY
 
       - name: Paper demo (no live orders)
         run: |
-          # Demo writes positions under /workspace path in config — override for CI cwd
           python - <<'PY'
           import json
           from pathlib import Path
           cfg = json.loads(Path("config.json").read_text(encoding="utf-8"))
           cfg.setdefault("persistence", {})["file"] = str(Path("positions.ci.json").resolve())
-          Path("config.ci.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          Path("config.ci.json").write_text(
+              json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
           print("wrote config.ci.json")
           PY
           python main.py --mode paper --scenario demo --config config.ci.json
