@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GridBot 367380" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23121821'/%3E%3Ctext x='90' y='108' text-anchor='middle' font-size='72' fill='%233dd6c6' font-family='system-ui,sans-serif' font-weight='700'%3EG%3C/text%3E%3C/svg%3E" />
+  <meta http-equiv="refresh" content="120" />
+  <title>Grid Bot · 367380 대시보드</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --panel2: #18202b;
+      --border: #243041;
+      --text: #e7eef8;
+      --muted: #8b9bb0;
+      --accent: #3dd6c6;
+      --accent2: #6ea8fe;
+      --good: #3dd68c;
+      --bad: #ff6b7a;
+      --warn: #f0c14a;
+      --buy: #3dd68c;
+      --sell: #ff8a6b;
+      --shadow: 0 8px 24px rgba(0,0,0,.35);
+      --radius: 16px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+      --tap: 48px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { font-size: 16px; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      font-size: 1rem;
+      line-height: 1.45;
+      background: radial-gradient(1200px 600px at 10% -10%, #152033 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    header {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+      padding: 18px 20px 10px; max-width: 1400px; margin: 0 auto;
+    }
+    header h1 { font-size: 1.4rem; margin: 0; letter-spacing: -.02em; }
+    header .sub { color: var(--muted); font-size: 1rem; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 999px; font-size: .9rem;
+      border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
+      min-height: 40px;
+    }
+    .btn-refresh {
+      appearance: none; border: 1px solid #2a6b5e; background: linear-gradient(180deg,#1a3a34,#14302b);
+      color: var(--accent); font: inherit; font-weight: 650; font-size: 1rem;
+      padding: 12px 20px; border-radius: 12px; min-height: var(--tap); min-width: 120px;
+      cursor: pointer; box-shadow: var(--shadow);
+    }
+    .btn-refresh:active { transform: scale(.98); opacity: .9; }
+    .btn-refresh:disabled { opacity: .55; cursor: wait; }
+    .hero-pnl {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .hero-pnl .card { padding: 18px; }
+    .hero-pnl .card .label { font-size: .85rem; }
+    .hero-pnl .card .value { font-size: 1.75rem; }
+    .offline-banner {
+      display: none; max-width: 1400px; margin: 8px auto; padding: 10px 14px;
+      background: #2a2410; border: 1px solid #5a4a20; color: var(--warn);
+      border-radius: 12px; font-size: .95rem;
+    }
+    .badge.ok { color: var(--good); border-color: #245a42; }
+    .badge.warn { color: var(--warn); border-color: #5a4a20; }
+    .badge.bad { color: var(--bad); border-color: #5a2430; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    main {
+      max-width: 1400px; margin: 0 auto; padding: 12px 16px 40px;
+      display: grid; gap: 14px;
+    }
+    .cards {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+    .card {
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; box-shadow: var(--shadow);
+    }
+    .card .label { color: var(--muted); font-size: .8rem; margin-bottom: 6px; }
+    .card .value { font-size: 1.4rem; font-weight: 650; font-variant-numeric: tabular-nums; word-break: break-word; }
+    .card .hint { color: var(--muted); font-size: .72rem; margin-top: 4px; }
+    .pos { color: var(--good); }
+    .neg { color: var(--bad); }
+    .grid2 {
+      display: grid; gap: 14px;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    section.panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+    }
+    section.panel h2 {
+      margin: 0; padding: 12px 16px; font-size: .95rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    section.panel h2 span.meta { color: var(--muted); font-weight: 400; font-size: .78rem; }
+    .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+    th, td {
+      padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border);
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    th { color: var(--muted); font-weight: 550; background: rgba(0,0,0,.15); position: sticky; top: 0; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .side-BUY { color: var(--buy); font-weight: 600; }
+    .side-SELL { color: var(--sell); font-weight: 600; }
+    .empty { padding: 18px; color: var(--muted); font-size: .85rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; }
+    .chip {
+      font-family: var(--mono); font-size: .9rem;
+      padding: 10px 12px; border-radius: 10px; min-height: 40px; display: inline-flex; align-items: center;
+      background: #0e1520; border: 1px solid var(--border); color: var(--accent2);
+    }
+    .config-row {
+      display: flex; flex-wrap: wrap; gap: 10px 18px;
+      padding: 12px 16px; color: var(--muted); font-size: .85rem;
+    }
+    .config-row strong { color: var(--text); font-weight: 600; }
+    footer {
+      max-width: 1400px; margin: 0 auto; padding: 0 16px 28px;
+      color: var(--muted); font-size: .75rem;
+    }
+    .err {
+      margin: 8px 16px; padding: 10px 12px; border-radius: 10px;
+      background: #2a1218; border: 1px solid #5a2430; color: var(--bad); font-size: .85rem;
+    }
+    code { font-family: var(--mono); font-size: .85em; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Grid Bot 대시보드</h1>
+      <div class="sub">ACE 미국나스닥100 · <code id="sym">367380</code></div>
+    </div>
+    <span class="badge" id="liveBadge"><span class="dot"></span><span id="liveText">LIVE 게이트</span></span>
+    <span class="badge" id="kisBadge"><span class="dot"></span><span id="kisText">KIS</span></span>
+    <span class="badge" id="sessBadge"><span class="dot"></span><span id="sessText">세션</span></span>
+    <span class="badge" id="refreshBadge">갱신: —</span>
+    <button type="button" class="btn-refresh" id="btnRefresh" onclick="manualRefresh()">🔄 새로고침</button>
+  </header>
+
+  <div id="offlineBanner" class="offline-banner">오프라인 스냅샷 · Safari에서 파일로 연 상태입니다</div>
+  <div id="errorBox" class="err" style="display:none; max-width:1400px; margin:8px auto;"></div>
+
+  <main>
+    <div class="hero-pnl" id="heroPnl"></div>
+    <div class="cards" id="overviewCards"></div>
+
+    <section class="panel">
+      <h2>설정 요약 <span class="meta" id="configMeta"></span></h2>
+      <div class="config-row" id="configRow">로딩…</div>
+      <div class="chips" id="buyLines"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>미체결 / 오픈 주문 <span class="meta" id="ordersMeta"></span></h2>
+        <div class="scroll" id="ordersTable"></div>
+      </section>
+      <section class="panel">
+        <h2>포지션 <span class="meta" id="posMeta"></span></h2>
+        <div class="scroll" id="posTable"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>PnL / 수익률 <span class="meta" id="pnlMeta"></span></h2>
+      <div class="cards" id="pnlCards" style="padding:12px;"></div>
+      <div class="scroll" id="rtTable"></div>
+    </section>
+
+    <section class="panel">
+      <h2>체결 / 트레이드 (로그) <span class="meta" id="tradesMeta"></span></h2>
+      <div class="scroll" id="tradesTable"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>백테스트 · 일봉 3개월 <span class="meta">results.csv top</span></h2>
+        <div class="scroll" id="btDaily"></div>
+      </section>
+      <section class="panel">
+        <h2>백테스트 · 분봉 10일 <span class="meta">results_minute_10d.csv top</span></h2>
+        <div class="scroll" id="btMinute"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>최근 이벤트 <span class="meta" id="eventsMeta"></span></h2>
+      <div class="scroll" id="eventsTable"></div>
+    </section>
+  </main>
+
+  <footer>
+    자동 갱신 ~15초 · 새로고침 버튼 · iPad Safari / 홈 화면 추가 ·
+    <code>/api/status</code>
+  </footer>
+
+<script>
+const REFRESH_MS = 15000;
+
+function fmtNum(n, digits=0) {
+  if (n === null || n === undefined || n === "") return "—";
+  const x = Number(n);
+  if (Number.isNaN(x)) return String(n);
+  return x.toLocaleString("ko-KR", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
+function fmtPct(n, digits=2) {
+  if (n === null || n === undefined || n === "") return "—";
+  const x = Number(n);
+  if (Number.isNaN(x)) return String(n);
+  const s = (x >= 0 ? "+" : "") + x.toFixed(digits) + "%";
+  return s;
+}
+function clsPnL(n) {
+  const x = Number(n);
+  if (Number.isNaN(x) || x === 0) return "";
+  return x > 0 ? "pos" : "neg";
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function empty(msg) { return `<div class="empty">${esc(msg)}</div>`; }
+
+function table(headers, rows, rowFn) {
+  if (!rows || !rows.length) return empty("데이터 없음");
+  const th = headers.map(h => `<th>${esc(h)}</th>`).join("");
+  const body = rows.map(rowFn).join("");
+  return `<table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function setBadge(el, textEl, state, label) {
+  el.classList.remove("ok", "warn", "bad");
+  if (state) el.classList.add(state);
+  textEl.textContent = label;
+}
+
+function render(d) {
+  document.getElementById("sym").textContent = d.overview?.symbol || "367380";
+  const la = d.live_approved || {};
+  if (la.valid_today) setBadge(liveBadge, liveText, "ok", "LIVE 승인 · 오늘");
+  else if (la.present) setBadge(liveBadge, liveText, "warn", "LIVE 파일 있음 · 날짜 불일치");
+  else setBadge(liveBadge, liveText, "bad", "LIVE 미승인 (안전)");
+
+  const kis = d.kis || {};
+  if (kis.ok) setBadge(kisBadge, kisText, "ok", kis.cached ? "KIS OK (캐시)" : "KIS OK");
+  else if (kis.skipped) setBadge(kisBadge, kisText, "warn", "KIS 스킵");
+  else setBadge(kisBadge, kisText, "warn", kis.error ? `KIS 오프라인` : "KIS —");
+
+  const ov = d.overview || {};
+  if (ov.in_session === true) setBadge(sessBadge, sessText, "ok", "장중 세션");
+  else if (ov.in_session === false) setBadge(sessBadge, sessText, "warn", "세션 외");
+  else setBadge(sessBadge, sessText, "", "세션 ?");
+
+  refreshBadge.textContent = "갱신: " + (d.generated_at || "—");
+
+  const cfg = ov.config_summary || {};
+  const pnlEarly = d.pnl || {};
+  const buyCntH = pnlEarly.buy_fill_count ?? ov.buy_fill_count;
+  const sellCntH = pnlEarly.sell_fill_count ?? ov.sell_fill_count;
+  const ordersH = d.open_orders || [];
+  const posH = d.positions || [];
+  if (document.getElementById("heroPnl")) {
+    heroPnl.innerHTML = [
+      ["실현 PnL(순)", fmtNum(pnlEarly.realized, 0) + "원", clsPnL(pnlEarly.realized)],
+      ["평가(MTM)", fmtNum(pnlEarly.mtm, 0) + "원", clsPnL(pnlEarly.mtm)],
+      ["합계(추정)", fmtNum(pnlEarly.total_est, 0) + "원", clsPnL(pnlEarly.total_est)],
+      ["체결", `매수 ${fmtNum(buyCntH)} / 매도 ${fmtNum(sellCntH)}`, ""],
+      ["오픈주문", `${ordersH.length}건`, ""],
+      ["포지션", `${d.positions_meta?.count ?? posH.length}건 · ${d.positions_meta?.total_qty ?? 0}주`, ""],
+    ].map(([l,v,c]) => `<div class="card"><div class="label">${esc(l)}</div><div class="value ${c || ""}">${esc(v)}</div></div>`).join("");
+  }
+  overviewCards.innerHTML = [
+    ["현재가", fmtNum(ov.last_price), ov.price_source || ""],
+    ["현금", ov.cash != null ? fmtNum(ov.cash) + "원" : "—", ov.cash_source || ""],
+    ["모드", ov.mode || "—", ""],
+    ["스페이싱", cfg.spacing_display || "—", `${cfg.levels || "—"}레벨`],
+    ["TP", cfg.tp_display || "—", ""],
+    ["세션", cfg.session || "—", ov.in_session === true ? "장중" : (ov.in_session === false ? "장외" : "")],
+    ["당일 신규매수", ov.new_buys_filled_today ?? "—", ""],
+    ["당일고가", fmtNum(ov.day_high), ""],
+  ].map(([l,v,h]) => `<div class="card"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("");
+
+  configMeta.textContent = ov.symbol_name || "";
+  configRow.innerHTML = `
+    <div>격자 <strong>${esc(cfg.spacing_display)} / ${esc(cfg.levels)}레벨 / TP ${esc(cfg.tp_display)}</strong></div>
+    <div>세션 <strong>${esc(cfg.session)}</strong></div>
+    <div>주문수량 <strong>${esc(cfg.qty_per_order)}</strong></div>
+    <div>최대보유 <strong>${esc(cfg.max_holdings)}</strong></div>
+    <div>일일신규매수상한 <strong>${esc(cfg.max_new_buys_per_day)}</strong></div>
+    <div>틱 <strong>${esc(cfg.tick_size)}</strong></div>
+    <div>ref <strong>${esc(fmtNum(ov.ref_price))}</strong> · spacing <strong>${esc(fmtNum(ov.spacing))}</strong></div>
+  `;
+  const lines = ov.buy_lines || [];
+  buyLines.innerHTML = lines.length
+    ? lines.map(p => `<span class="chip">${fmtNum(p)}</span>`).join("")
+    : `<span class="empty" style="padding:0">매수라인 없음</span>`;
+
+  const orders = d.open_orders || [];
+  ordersMeta.textContent = `${orders.length}건 · ${d.orders_meta?.updated_at || ""}`;
+  ordersTable.innerHTML = table(
+    ["ID", "Side", "가격", "수량", "상태", "태그", "갱신"],
+    orders,
+    o => `<tr>
+      <td>${esc(o.order_id)}</td>
+      <td class="side-${esc(o.side)}">${esc(o.side)}</td>
+      <td>${fmtNum(o.price)}</td>
+      <td>${fmtNum(o.qty)}</td>
+      <td>${esc(o.status)}</td>
+      <td>${esc(o.client_tag)}</td>
+      <td>${esc(o.updated_at || o.created_at || "")}</td>
+    </tr>`
+  );
+
+  const pos = d.positions || [];
+  posMeta.textContent = `${d.positions_meta?.count ?? pos.length}건 · qty ${d.positions_meta?.total_qty ?? 0}`;
+  posTable.innerHTML = table(
+    ["매수가", "수량", "일자", "매도주문"],
+    pos,
+    p => `<tr>
+      <td>${fmtNum(p.buy_price ?? p.price)}</td>
+      <td>${fmtNum(p.qty)}</td>
+      <td>${esc(p.date || "")}</td>
+      <td>${esc(p.sell_order_id || "—")}</td>
+    </tr>`
+  );
+
+  const pnl = d.pnl || {};
+  pnlMeta.textContent = pnl.backtest_return_note || (pnl.pnl_source ? ("source: " + pnl.pnl_source) : "");
+  const liveRet = pnl.live_return_pct;
+  const liveRetCard = liveRet != null
+    ? ["라이브 수익률", fmtPct(liveRet, 4), clsPnL(liveRet)]
+    : ["라이브 수익률", fmtPct(pnl.backtest_return_pct, 4) + (pnl.backtest_return_pct != null ? " (백테스트)" : ""), clsPnL(pnl.backtest_return_pct)];
+  const buyCnt = pnl.buy_fill_count ?? ov.buy_fill_count;
+  const sellCnt = pnl.sell_fill_count ?? ov.sell_fill_count;
+  const buyQty = pnl.buy_fill_qty ?? ov.buy_fill_qty;
+  const sellQty = pnl.sell_fill_qty ?? ov.sell_fill_qty;
+  const pnlCardRows = [
+    ["매수건수", buyCnt != null ? `${fmtNum(buyCnt)}건(${fmtNum(buyQty)}주)` : "—", ""],
+    ["매도건수", sellCnt != null ? `${fmtNum(sellCnt)}건(${fmtNum(sellQty)}주)` : "—", ""],
+    ["실현 PnL(순)", fmtNum(pnl.realized, 0), clsPnL(pnl.realized)],
+  ];
+  if (pnl.realized_gross != null && pnl.realized_gross !== "") {
+    pnlCardRows.push(["총차익(gross)", fmtNum(pnl.realized_gross, 0), clsPnL(pnl.realized_gross)]);
+  }
+  pnlCardRows.push(
+    ["평가(MTM)", fmtNum(pnl.mtm, 0), clsPnL(pnl.mtm)],
+    ["합계(추정)", fmtNum(pnl.total_est, 0), clsPnL(pnl.total_est)],
+    ["라운드트립", fmtNum(pnl.round_trip_count), ""],
+    liveRetCard,
+    ["백테스트 수익률", fmtPct(pnl.backtest_return_pct), clsPnL(pnl.backtest_return_pct)],
+  );
+  if (pnl.capital_used_today != null) {
+    pnlCardRows.push(["당일사용자본", fmtNum(pnl.capital_used_today, 0), ""]);
+  }
+  pnlCards.innerHTML = pnlCardRows.map(([l,v,c]) => `<div class="card"><div class="label">${esc(l)}</div><div class="value ${c || ""}">${esc(v)}</div></div>`).join("");
+
+  const rts = pnl.round_trips || [];
+  rtTable.innerHTML = rts.length ? table(
+    ["매수", "매도", "수량", "PnL", "매도시각"],
+    rts.slice().reverse(),
+    r => {
+      const buy = r.buy_price ?? r.buy;
+      const sell = r.sell_price ?? r.sell;
+      const pn = r.pnl ?? r.pnl_gross;
+      return `<tr>
+      <td>${fmtNum(buy)}</td>
+      <td>${fmtNum(sell)}</td>
+      <td>${fmtNum(r.qty)}</td>
+      <td class="${clsPnL(pn)}">${fmtNum(pn, 2)}</td>
+      <td>${esc(r.sell_ts || "")}</td>
+    </tr>`;
+    }
+  ) : empty("라운드트립 없음 (로그 체결 기준)");
+
+  const trades = d.trades || [];
+  tradesMeta.textContent = `${trades.length}건`;
+  tradesTable.innerHTML = table(
+    ["시각", "소스", "Side", "가격", "수량", "주문ID", "태그/메시지"],
+    trades.slice(0, 80),
+    t => `<tr>
+      <td>${esc(t.ts || "")}</td>
+      <td>${esc(t.source || t.kind || "")}</td>
+      <td class="side-${esc(t.side)}">${esc(t.side || "")}</td>
+      <td>${fmtNum(t.price)}</td>
+      <td>${fmtNum(t.qty)}</td>
+      <td>${esc(t.order_id || "")}</td>
+      <td>${esc(t.tag || t.message || "")}</td>
+    </tr>`
+  );
+
+  function renderBt(el, bt, matched) {
+    if (!bt || !bt.present) { el.innerHTML = empty("파일 없음"); return; }
+    const rows = bt.rows || [];
+    const highlight = matched ? `현재파라미터 매칭: return ${fmtPct(matched.total_return_pct)} · RT ${matched.round_trips} · DD ${matched.max_drawdown_pct}%` : "";
+    const headNote = highlight ? `<div class="empty" style="padding:10px 12px;border-bottom:1px solid var(--border)">${esc(highlight)}</div>` : "";
+    el.innerHTML = headNote + table(
+      ["spacing", "levels", "tp", "return%", "realized", "RT", "maxDD%", "final_eq"],
+      rows,
+      r => {
+        const isMatch = matched && String(r.spacing_pct)===String(matched.spacing_pct)
+          && String(r.levels)===String(matched.levels)
+          && String(r.tp_pct)===String(matched.tp_pct);
+        const style = isMatch ? ' style="background:rgba(61,214,198,.08)"' : "";
+        return `<tr${style}>
+          <td>${esc(r.spacing_pct)}</td>
+          <td>${esc(r.levels)}</td>
+          <td>${esc(r.tp_pct)}</td>
+          <td class="${clsPnL(r.total_return_pct)}">${fmtPct(r.total_return_pct)}</td>
+          <td>${fmtNum(r.realized_pnl, 2)}</td>
+          <td>${esc(r.round_trips)}</td>
+          <td>${esc(r.max_drawdown_pct)}</td>
+          <td>${fmtNum(r.final_equity, 0)}</td>
+        </tr>`;
+      }
+    );
+  }
+  renderBt(btDaily, d.backtest?.daily_3m, d.backtest?.matched_params_daily);
+  renderBt(btMinute, d.backtest?.minute_10d, d.backtest?.matched_params_minute);
+
+  const ev = d.recent_events || [];
+  eventsMeta.textContent = (d.log_files || []).slice(0,3).join(", ");
+  eventsTable.innerHTML = table(
+    ["시각", "kind", "메시지", "파일"],
+    ev.slice(0, 40),
+    e => `<tr>
+      <td>${esc(e.ts || "")}</td>
+      <td>${esc(e.kind || "")}</td>
+      <td>${esc(e.message || "")}</td>
+      <td>${esc(e.file || "")}</td>
+    </tr>`
+  );
+}
+
+let refreshing = false;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  const btn = document.getElementById("btnRefresh");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (d.error) throw new Error(d.message || d.error);
+    errorBox.style.display = "none";
+    const ob = document.getElementById("offlineBanner");
+    if (ob) ob.style.display = d._offline_snapshot ? "block" : "none";
+    render(d);
+  } catch (e) {
+    errorBox.style.display = "block";
+    errorBox.textContent = "상태 로드 실패: " + e.message;
+  } finally {
+    refreshing = false;
+    if (btn) btn.disabled = false;
+  }
+}
+function manualRefresh() { refresh(); }
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

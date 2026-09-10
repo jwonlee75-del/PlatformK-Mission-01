@@ -1,0 +1,23 @@
+# secrets / live gates
+LIVE_APPROVED
+**/__pycache__/
+*.pyc
+.env
+*.pem
+*.key
+
+# runtime state & logs
+logs/
+orders_state.json
+orders_state.json.bak*
+positions.json
+day_ledger.json
+dashboard-snapshot.html
+
+# tooling binaries / tunnels
+../cloudflared
+tunnel_url.txt
+
+# local exports
+logs/*.html
+**/GridBot-*.html

@@ -1,0 +1,96 @@
+{
+  "symbol": "367380",
+  "symbol_name": "ACE 미국나스닥100",
+  "timezone": "Asia/Seoul",
+  "session": {
+    "start": "09:05",
+    "end": "15:20",
+    "end_action": "cancel_unfilled_buys_only"
+  },
+  "grid": {
+    "levels": 5,
+    "spacing_mode": "daily_pct",
+    "spacing_pct": 0.002,
+    "tick_size": 5,
+    "round_to_tick": true,
+    "qty_per_order": 1,
+    "first_line": "last_minus_one_spacing",
+    "take_profit": "buy_plus_tp_pct",
+    "recycle": "unlimited_rebuy_at_grid_line",
+    "tp_pct": 0.002,
+    "take_profit_note": "tp_pct independent; currently 0.2% matching spacing",
+    "recycle_note": "On SELL fill, rebuy at Position.grid_line (limit), not fill_price; TP still uses fill buy_price + spacing"
+  },
+  "limits": {
+    "max_new_buys_per_day": 5,
+    "new_buy_count_basis": "filled_new_buys_only",
+    "ratchet_reorder_counts_as_new_buy": false,
+    "max_holdings": 15,
+    "stop_loss": null
+  },
+  "ratchet": {
+    "enabled": true,
+    "trigger": "day_high > top_buy_line + 2 * spacing",
+    "action": "cancel_pending_buys_only_then_replace_up_by_one_spacing",
+    "keep_open_sell_orders": true,
+    "repeat_while_condition_holds": true
+  },
+  "order_state_machine": {
+    "states": [
+      "pending",
+      "canceling",
+      "open",
+      "filled"
+    ],
+    "transitions": {
+      "submit": "pending -> open",
+      "request_cancel": "open|pending -> canceling",
+      "cancel_ack": "canceling -> (removed)",
+      "fill_while_canceling": "canceling -> filled",
+      "fill": "open|pending -> filled"
+    },
+    "order_id_mapping": true,
+    "prevent_duplicate_price": true
+  },
+  "persistence": {
+    "file": "/workspace/grid-bot/positions.json",
+    "on_buy_fill": "record_buy_price_qty_date",
+    "on_sell_fill": "delete_record",
+    "on_session_start": "restore_sell_at_buy_plus_spacing_then_place_new_grid"
+  },
+  "safety": {
+    "api_retry": 3,
+    "on_api_fail": "stop_and_alert_telegram",
+    "live_orders_require_explicit_approval": true,
+    "live_gate": {
+      "require_mode_live": true,
+      "require_cli_flag_or_file": true,
+      "cli_flag": "--i-approve-live-orders",
+      "approval_file": "/workspace/grid-bot/LIVE_APPROVED",
+      "approval_file_content": "Seoul YYYY-MM-DD (Asia/Seoul calendar date)",
+      "default_allow_mutations": false,
+      "live_dry_allows_orders": false
+    },
+    "kis_env_dv": "real",
+    "kis_config": "/home/box/KIS/config/kis_devlp.yaml",
+    "intent_log_glob": "/workspace/grid-bot/logs/live-intent-*.jsonl"
+  },
+  "cost_assumptions": {
+    "round_trip_fee_pct": 0.0003,
+    "capital_gains_tax_pct": 0.154,
+    "note": "verify against actual KIS account fees"
+  },
+  "updated_at": "2026-09-09T10:21:00+09:00",
+  "param_choice": {
+    "spacing_pct": 0.002,
+    "levels": 5,
+    "tp_pct": 0.002,
+    "note": "User kept 0.2%/5/0.2% despite backtests favoring wider spacing"
+  },
+  "telegram": {
+    "chat_id": "840503590",
+    "notify_on_bootstrap_success": true,
+    "notify_on_bootstrap_error": true,
+    "notify_on_session_api_fail": true
+  }
+}
