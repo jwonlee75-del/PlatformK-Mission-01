@@ -88,9 +88,9 @@
     "note": "User kept 0.2%/5/0.2% despite backtests favoring wider spacing"
   },
   "telegram": {
-    "chat_id": "840503590",
     "notify_on_bootstrap_success": true,
     "notify_on_bootstrap_error": true,
-    "notify_on_session_api_fail": true
+    "notify_on_session_api_fail": true,
+    "chat_id_note": "Set TELEGRAM_CHAT_ID env or box-secrets TELEGRAM_CHAT_ID (not committed)"
   }
 }

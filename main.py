@@ -417,7 +417,13 @@ def _load_telegram_creds(cfg: dict[str, Any] | None = None) -> tuple[str, str]:
             token = ""
     if not chat:
         tg = (cfg or {}).get("telegram") or {}
-        chat = str(tg.get("chat_id") or "840503590")
+        chat = str(tg.get("chat_id") or os.environ.get("TELEGRAM_CHAT_ID") or "")
+        if not chat:
+            try:
+                secrets = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8")).get("secrets") or {}
+                chat = str(secrets.get("TELEGRAM_CHAT_ID") or "")
+            except Exception:
+                chat = ""
     return token, chat
 
 
@@ -425,7 +431,7 @@ def telegram_alert(message: str, *, cfg: dict[str, Any] | None = None) -> None:
     """Send Telegram alert. Logs always; never prints bot token.
 
     Loads token from env or /home/box/agent-data/box-secrets.json;
-    chat_id from TELEGRAM_CHAT_ID or config.telegram.chat_id (default 840503590).
+    chat_id from TELEGRAM_CHAT_ID / box-secrets / config.telegram.chat_id (no hardcoded default).
     """
     print(f"[telegram_alert] {message[:200]}")
     token, chat = _load_telegram_creds(cfg)

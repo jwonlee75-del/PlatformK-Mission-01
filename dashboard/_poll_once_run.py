@@ -10,13 +10,29 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, time as dtime
 from pathlib import Path
+
+def _telegram_chat_id() -> str:
+    import os, json
+    from pathlib import Path
+    v = os.environ.get("TELEGRAM_CHAT_ID") or ""
+    if v:
+        return str(v)
+    try:
+        secrets = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8")).get("secrets") or {}
+        v = str(secrets.get("TELEGRAM_CHAT_ID") or "")
+        if v:
+            return v
+    except Exception:
+        pass
+    return ""
+
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_status import build_status  # noqa: E402
 
 SEOUL = ZoneInfo("Asia/Seoul")
-CHAT_ID = "840503590"
+CHAT_ID = _telegram_chat_id()
 ROOT = Path(__file__).resolve().parent.parent
 OFFSET_FILE = ROOT / "logs" / "telegram_update_offset.txt"
 
