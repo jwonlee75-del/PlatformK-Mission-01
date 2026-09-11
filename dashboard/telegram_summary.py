@@ -17,9 +17,18 @@ def _telegram_chat_id() -> str:
     v = os.environ.get("TELEGRAM_CHAT_ID") or ""
     if v:
         return str(v)
+    # dual path: secrets JSON + card file
     try:
-        secrets = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8")).get("secrets") or {}
-        v = str(secrets.get("TELEGRAM_CHAT_ID") or "")
+        blob = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8"))
+        secrets = blob.get("secrets") or {}
+        card = blob.get("card") or {}
+        v = str(secrets.get("TELEGRAM_CHAT_ID") or card.get("TELEGRAM_CHAT_ID") or "")
+        if v:
+            return v
+    except Exception:
+        pass
+    try:
+        v = Path("/home/box/box-secrets/TELEGRAM_CHAT_ID").read_text(encoding="utf-8").strip()
         if v:
             return v
     except Exception:
@@ -42,10 +51,12 @@ def _token() -> str:
     if t:
         return t
     try:
-        secrets = json.loads(
+        blob = json.loads(
             Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8")
-        ).get("secrets") or {}
-        return str(secrets.get("TELEGRAM_BOT_TOKEN") or "")
+        )
+        secrets = blob.get("secrets") or {}
+        card = blob.get("card") or {}
+        return str(secrets.get("TELEGRAM_BOT_TOKEN") or card.get("TELEGRAM_BOT_TOKEN") or "")
     except Exception:
         return ""
 
@@ -198,6 +209,15 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
     else:
         mtm_line = f"  평가(MTM): {_won_plain(mtm)}원"
 
+    cum_lines = []
+    try:
+        from cumulative_pnl import format_cumulative_lines
+        cum = pnl.get("cumulative_3d")
+        if cum:
+            cum_lines = format_cumulative_lines(cum, indent="  ")
+    except Exception:
+        cum_lines = []
+
     lines += [
         "",
         fill_line,
@@ -208,6 +228,7 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
         f"  왕복: {rts if rts is not None else '-'}회 / 수수료~{_won_plain(fees)} / 세금~{_won_plain(tax)}",
         mtm_line,
         f"  수익률: {ret_txt}",
+        *cum_lines,
         "",
         f"최근 체결 로그: {len(trades)}건",
     ]
@@ -217,10 +238,18 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
         lines.append(f"  · {kind} {msg}")
 
     lines += ["", "🔄 새로고침으로 실시간 다시 받기"]
+    # After-hours: refresh buttons need a poller (--serve-refresh / --poll-once)
+    try:
+        led = __import__("json").loads((__import__("pathlib").Path(__file__).resolve().parent.parent / "day_ledger.json").read_text())
+        if led.get("session_ended") or led.get("eod"):
+            lines += ["", "※ 장후 🔄 는 폴러 필요할 수 있음 (--poll-once)"]
+    except Exception:
+        pass
     return "\n".join(lines)
 
 
 def send_summary(*, try_kis: bool = False, live_tag: bool = False) -> dict:
+    # --kis / refresh: build_status may pull KIS fills into day_ledger when stale
     status = build_status(try_kis=try_kis)
     text = format_summary(status, live_tag=live_tag or try_kis)
     today = datetime.now(SEOUL).strftime("%Y%m%d")
@@ -324,7 +353,7 @@ def process_refresh_callbacks(*, try_kis: bool = True, long_poll: int = 0) -> in
     return handled
 
 
-def serve_refresh_until(end_hhmm: str = "15:25", *, poll_timeout: int = 25) -> None:
+def serve_refresh_until(end_hhmm: str = "23:50", *, poll_timeout: int = 25) -> None:
     eh, em = map(int, end_hhmm.split(":"))
     print(f"refresh poller until {end_hhmm} KST", flush=True)
     while True:
@@ -337,7 +366,16 @@ def serve_refresh_until(end_hhmm: str = "15:25", *, poll_timeout: int = 25) -> N
             if n:
                 print(f"handled {n} refresh(es)", flush=True)
         except Exception as e:
-            print(f"poll_err {type(e).__name__}", flush=True)
+            detail = str(e)
+            # Surface 409 Conflict (dual getUpdates pollers) without dumping token URLs
+            if "409" in detail or "Conflict" in detail:
+                print("poll_err HTTPError 409 Conflict — another getUpdates poller owns this token", flush=True)
+            else:
+                # keep short: status code only when HTTPError
+                msg = detail
+                if "HTTP Error" in detail:
+                    msg = detail.split(":", 1)[0]
+                print(f"poll_err {type(e).__name__}: {msg[:120]}", flush=True)
             time.sleep(3)
 
 
@@ -347,7 +385,7 @@ if __name__ == "__main__":
         n = process_refresh_callbacks(try_kis="--no-kis" not in args, long_poll=0)
         print("handled", n)
     elif "--serve-refresh" in args:
-        until = "15:25"
+        until = "23:50"
         for a in sys.argv[1:]:
             if a.startswith("--until="):
                 until = a.split("=", 1)[1]

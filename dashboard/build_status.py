@@ -190,14 +190,21 @@ def _parse_fills_and_meta(max_events: int = 200) -> dict:
                 mb = re.search(r"'buy_price':\s*(\d+)", msg)
                 tag = f"buy={mb.group(1)}" if mb else None
                 source = "engine"
-            elif kind in ("buy_fill", "sell_fill"):
+            elif kind in ("buy_fill", "sell_fill", "kis.fill_resync"):
                 is_fill = True
-                side = rec.get("side") or ("BUY" if kind == "buy_fill" else "SELL")
+                side = rec.get("side") or ("BUY" if "buy" in kind else "SELL")
+                if kind == "kis.fill_resync":
+                    side = rec.get("side") or side
                 price = rec.get("price") or data.get("price")
                 qty = rec.get("qty") or data.get("qty") or 1
                 order_id = rec.get("odno") or rec.get("order_id") or data.get("odno")
-                tag = rec.get("message") or msg
-                source = "kis" if (rec.get("source") == "kis_daily_ccld" or "fills-live" in path.name or "fills-sync" in path.name) else "log"
+                tag = rec.get("message") or msg or f"{side} {qty}@{price} odno={order_id}"
+                source = "kis" if (
+                    rec.get("source") in ("kis_daily_ccld", "midday_kis_resync")
+                    or "fills-live" in path.name
+                    or "fills-sync" in path.name
+                    or kind == "kis.fill_resync"
+                ) else "log"
             elif kind == "broker.fill":
                 is_fill = True
                 side = data.get("side")
@@ -298,9 +305,21 @@ def _parse_fills_and_meta(max_events: int = 200) -> dict:
         src = x.get("source") or ""
         oid = str(x.get("order_id") or "")
         file_n = str(x.get("file") or "")
-        is_mock = oid.startswith("MOCK") or "run-20260908" in file_n or src == "shadow"
-        is_liveish = src in ("kis", "broker", "live") or "fills-live" in file_n or "live-session" in file_n
-        return 0 if is_liveish else (1 if not is_mock else 2)
+        is_mock = (
+            oid.startswith("MOCK")
+            or src == "shadow"
+            or file_n.startswith("run-")  # paper/demo run logs
+        )
+        if is_mock:
+            return 2
+        is_liveish = (
+            src in ("kis", "broker", "live")
+            or "fills-live" in file_n
+            or "fills-sync" in file_n
+            or "live-session" in file_n
+            or src == "day_ledger"
+        )
+        return 0 if is_liveish else 1
     uniq_trades.sort(key=_pri)
     # If any live/kis trades exist for today, drop MOCK-heavy sim runs from the head list
     has_live = any(_pri(t) == 0 for t in uniq_trades)
@@ -441,16 +460,101 @@ def _try_kis_quote(symbol: str, env_dv: str = "real") -> dict:
     return result
 
 
+def _count_today_log_sells(trades: list[dict]) -> int:
+    """Count today's unique SELL fills (prefer price|qty fingerprint to merge LIVE-id vs odno)."""
+    today = _now_seoul().strftime("%Y-%m-%d")
+    today_compact = today.replace("-", "")
+    # Primary: fills-live-TODAY.jsonl odnos
+    fills_path = LOGS / f"fills-live-{today_compact}.jsonl"
+    odnos: set[str] = set()
+    px_keys: set[str] = set()
+    if fills_path.exists():
+        for rec in _iter_jsonl(fills_path):
+            if str(rec.get("side") or "").upper() != "SELL":
+                continue
+            if rec.get("kind") not in ("kis.fill_resync", "sell_fill", "buy_fill", None, ""):
+                # still accept side=SELL rows
+                pass
+            od = str(rec.get("odno") or rec.get("order_id") or "")
+            px = rec.get("price")
+            qty = rec.get("qty") or 1
+            if od:
+                odnos.add(od)
+            if px is not None:
+                px_keys.add(f"{int(px)}:{int(qty)}")
+    # Secondary: today's broker/engine sells not already covered by price fingerprint
+    for tr in trades or []:
+        if str(tr.get("side") or "").upper() != "SELL":
+            continue
+        ts = str(tr.get("ts") or "")
+        fname = str(tr.get("file") or "")
+        if not (ts.startswith(today) or today_compact in fname):
+            continue
+        src = str(tr.get("source") or "")
+        if src not in ("broker", "engine", "kis"):
+            continue
+        try:
+            px = int(tr.get("price"))
+            qty = int(tr.get("qty") or 1)
+        except (TypeError, ValueError):
+            continue
+        px_keys.add(f"{px}:{qty}")
+    return max(len(odnos), len(px_keys))
+
+
+def _maybe_refresh_ledger_from_kis(led: dict, log_sells: int) -> dict:
+    """If ledger looks stale vs live sells, run midday KIS ledger resync once.
+
+    Guarded by env SKIP and a short mtime cooldown to avoid API hammering.
+    """
+    if os.environ.get("DASHBOARD_SKIP_LEDGER_RESYNC", "").lower() in ("1", "true", "yes"):
+        return led
+    today = _now_seoul().strftime("%Y-%m-%d")
+    if str(led.get("date") or "") != today:
+        return led
+    led_sells = int((led.get("meta") or {}).get("sell_fill_count") or 0)
+    if log_sells <= led_sells and led.get("realized_gross") is not None:
+        return led
+    # cooldown: skip if ledger updated within last 60s
+    try:
+        import time as _time
+        mtime = (ROOT / "day_ledger.json").stat().st_mtime
+        if _time.time() - mtime < 60:
+            return led
+    except OSError:
+        pass
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "midday_kis_ledger_resync", ROOT / "midday_kis_ledger_resync.py"
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.run()
+            return _read_json(ROOT / "day_ledger.json", {}) or led
+    except Exception:
+        return led
+    return _read_json(ROOT / "day_ledger.json", {}) or led
+
+
 def build_status(*, try_kis: bool = True) -> dict:
     cfg = _load_config()
     positions = _read_json(ROOT / "positions.json", {"positions": [], "count": 0}) or {}
     orders_state = _read_json(ROOT / "orders_state.json", {}) or {}
     log_meta = _parse_fills_and_meta()
     pnl = _compute_realized_pnl(log_meta["trades"])
-    # Prefer explicit day ledger when present (KIS-synced)
+    log_sells = _count_today_log_sells(log_meta.get("trades") or [])
+    # Prefer explicit day ledger when present (KIS-synced) — but not if stale vs live sells
     try:
         led = _read_json(ROOT / "day_ledger.json", {}) or {}
-        if led.get("realized_gross") is not None:
+        if try_kis and os.environ.get("DASHBOARD_SKIP_KIS", "").lower() not in ("1", "true", "yes"):
+            led = _maybe_refresh_ledger_from_kis(led, log_sells)
+        led_sells = int((led.get("meta") or {}).get("sell_fill_count") or 0)
+        led_date_ok = str(led.get("date") or "") == _now_seoul().strftime("%Y-%m-%d")
+        # Stale only when live/kis uniquely shows MORE sells than ledger claims
+        ledger_stale = bool(led_date_ok and log_sells > led_sells)
+        if led.get("realized_gross") is not None and not ledger_stale:
             raw_rts = led.get("round_trips") or []
             norm_rts = []
             for rt in raw_rts:
@@ -504,6 +608,43 @@ def build_status(*, try_kis: bool = True) -> dict:
                 "sell_fill_qty": led_meta.get("sell_fill_qty"),
                 "capital_used_ledger": led.get("capital_used"),
             }
+            # Prefer ledger today_fills at head of trades (authoritative KIS sync)
+            today_s = _now_seoul().strftime("%Y-%m-%d")
+            if str(led.get("date") or "") == today_s:
+                led_fills = []
+                for f in (led_meta.get("today_fills") or []):
+                    if not isinstance(f, dict):
+                        continue
+                    side = str(f.get("side") or "")
+                    px = f.get("price")
+                    qty = f.get("qty") or 1
+                    odno = f.get("odno")
+                    tmd = str(f.get("tmd") or "000000").zfill(6)[-6:]
+                    led_fills.append(
+                        {
+                            "ts": f"{today_s}T{tmd[:2]}:{tmd[2:4]}:{tmd[4:6]}+09:00",
+                            "kind": "buy_fill" if side == "BUY" else "sell_fill",
+                            "side": side,
+                            "price": px,
+                            "qty": qty,
+                            "order_id": odno,
+                            "tag": f"{side} {qty}@{px} odno={odno}",
+                            "source": "day_ledger",
+                            "file": "day_ledger.json",
+                            "message": f"{side} {qty}@{px} odno={odno}",
+                        }
+                    )
+                if led_fills:
+                    rest = [
+                        tr
+                        for tr in log_meta.get("trades") or []
+                        if tr.get("source") != "day_ledger"
+                        and not str(tr.get("order_id") or "").startswith("MOCK")
+                        and not str(tr.get("file") or "").startswith("run-")
+                    ]
+                    seen = {str(x.get("order_id")) for x in led_fills}
+                    rest = [tr for tr in rest if str(tr.get("order_id")) not in seen]
+                    log_meta["trades"] = led_fills + rest
     except Exception:
         pass
 
@@ -724,6 +865,13 @@ def build_status(*, try_kis: bool = True) -> dict:
         if sell_fill_qty is None:
             sell_fill_qty = int(sq) if sq == int(sq) else sq
 
+    # 3-trading-day cumulative realized (Seoul weekdays ending today)
+    try:
+        from cumulative_pnl import compute_cumulative_pnl
+        cum3 = compute_cumulative_pnl(n_days=3, archive_today=True)
+    except Exception:
+        cum3 = None
+
     approval = _live_approved()
     now = _now_seoul()
 
@@ -821,6 +969,7 @@ def build_status(*, try_kis: bool = True) -> dict:
             "backtest_return_pct": return_pct,
             "backtest_return_note": return_note,
             "initial_capital_hint": initial_capital,
+            "cumulative_3d": cum3,
         },
         "backtest": {
             "daily_3m": bt_daily,

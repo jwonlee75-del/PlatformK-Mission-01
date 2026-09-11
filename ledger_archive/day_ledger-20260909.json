@@ -1,0 +1,138 @@
+{
+  "date": "2026-09-09",
+  "updated_at": "2026-09-09T15:54:41+09:00",
+  "symbol": "367380",
+  "eod": true,
+  "session_ended": true,
+  "session_end": "15:20",
+  "session_end_cancels": [
+    {
+      "order_id": "KIS-0000145000",
+      "side": "BUY",
+      "price": 29950,
+      "qty": 1,
+      "odno": "0000145000",
+      "tag": "grid_L5@29950"
+    },
+    {
+      "order_id": "KIS-0000412500",
+      "side": "BUY",
+      "price": 30010,
+      "qty": 1,
+      "odno": "0000412500",
+      "tag": "recycle@30010"
+    }
+  ],
+  "round_trips": [
+    {
+      "buy_odno": "0000144600",
+      "sell_odno": "0000203500",
+      "buy": 30050,
+      "sell": 30070,
+      "qty": 1,
+      "pnl_gross": 20,
+      "grid_line": 30190,
+      "sell_tmd": "090457"
+    },
+    {
+      "buy_odno": "0000144700",
+      "sell_odno": "0000206000",
+      "buy": 30050,
+      "sell": 30110,
+      "qty": 1,
+      "pnl_gross": 60,
+      "grid_line": 30130,
+      "sell_tmd": "090551"
+    },
+    {
+      "buy_odno": "0000144800",
+      "sell_odno": "0000206000",
+      "buy": 30050,
+      "sell": 30110,
+      "qty": 1,
+      "pnl_gross": 60,
+      "grid_line": 30070,
+      "sell_tmd": "090551"
+    },
+    {
+      "buy_odno": "0000144900",
+      "sell_odno": "0000206000",
+      "buy": 30010,
+      "sell": 30110,
+      "qty": 1,
+      "pnl_gross": 100,
+      "grid_line": 30010,
+      "sell_tmd": "090551"
+    },
+    {
+      "buy_odno": "0000412100",
+      "sell_odno": "0000412700",
+      "buy": 30135,
+      "sell": 30190,
+      "qty": 1,
+      "pnl_gross": 55,
+      "grid_line": 30190,
+      "sell_tmd": "102202"
+    },
+    {
+      "buy_odno": "0000412300",
+      "sell_odno": "0000413200",
+      "buy": 30130,
+      "sell": 30190,
+      "qty": 1,
+      "pnl_gross": 60,
+      "grid_line": 30130,
+      "sell_tmd": "102219"
+    },
+    {
+      "buy_odno": "0000412800",
+      "sell_odno": "0000420200",
+      "buy": 30130,
+      "sell": 30195,
+      "qty": 1,
+      "pnl_gross": 65,
+      "grid_line": 30130,
+      "sell_tmd": "102603"
+    }
+  ],
+  "realized_gross": 420,
+  "fees_day_est": 63,
+  "tax_est": 65,
+  "realized_net_est": 292.0,
+  "note": "EOD; FIFO RTs with open lots pinned to engine/KIS-avg holdings; fees_model=0.015%/side; tax 15.4% on gross",
+  "fees_model_est": 63,
+  "fees_kis_day_tlex": 750,
+  "capital_used": 300945,
+  "matched_buy_notional": 210555,
+  "open_position_cost": 90390,
+  "meta": {
+    "buy_fill_count": 10,
+    "sell_fill_count": 5,
+    "buy_fill_qty": 10,
+    "sell_fill_qty": 7,
+    "match_method": "FIFO_closed_lots_engine_open_pinned",
+    "unmatched_buys": [
+      {
+        "odno": "0000412400",
+        "buy": 30070,
+        "grid_line": 30070
+      },
+      {
+        "odno": "0000522600",
+        "buy": 30130,
+        "grid_line": 30130
+      },
+      {
+        "odno": "0000523100",
+        "buy": 30190,
+        "grid_line": 30190
+      }
+    ],
+    "kis_unfilled_count": 0,
+    "open_pin": [
+      30190,
+      30130,
+      30070
+    ]
+  }
+}

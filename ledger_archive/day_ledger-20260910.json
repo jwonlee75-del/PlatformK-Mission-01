@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-10",
+  "updated_at": "2026-09-10T18:58:57+09:00",
+  "symbol": "367380",
+  "eod": true,
+  "session_ended": true,
+  "round_trips": [
+    {
+      "buy_odno": "0000149200",
+      "sell_odno": "0000514400",
+      "buy": 29960,
+      "sell": 30020,
+      "qty": 1.0,
+      "pnl_gross": 60,
+      "grid_line": 29960,
+      "sell_tmd": "124334",
+      "match": "tp_link"
+    },
+    {
+      "buy_odno": "0000149300",
+      "sell_odno": "0000514500",
+      "buy": 29900,
+      "sell": 29960,
+      "qty": 1.0,
+      "pnl_gross": 60,
+      "grid_line": 29900,
+      "sell_tmd": "124335",
+      "match": "tp_link"
+    }
+  ],
+  "realized_gross": 120.0,
+  "fees_day_est": 18,
+  "tax_est": 18,
+  "realized_net_est": 84.0,
+  "note": "archived from logs/status-summary-20260910-eod.json for cumulative_pnl",
+  "meta": {
+    "buy_fill_count": 3,
+    "sell_fill_count": 2,
+    "buy_fill_qty": 3,
+    "sell_fill_qty": 2,
+    "archive_source": "logs/status-summary-20260910-eod.json"
+  }
+}

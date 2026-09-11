@@ -198,6 +198,15 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
     else:
         mtm_line = f"  평가(MTM): {_won_plain(mtm)}원"
 
+    cum_lines = []
+    try:
+        from cumulative_pnl import format_cumulative_lines
+        cum = pnl.get("cumulative_3d")
+        if cum:
+            cum_lines = format_cumulative_lines(cum, indent="  ")
+    except Exception:
+        cum_lines = []
+
     lines += [
         "",
         fill_line,
@@ -208,6 +217,7 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
         f"  왕복: {rts if rts is not None else '-'}회 / 수수료~{_won_plain(fees)} / 세금~{_won_plain(tax)}",
         mtm_line,
         f"  수익률: {ret_txt}",
+        *cum_lines,
         "",
         f"최근 체결 로그: {len(trades)}건",
     ]
@@ -297,7 +307,7 @@ def process_refresh_callbacks(*, try_kis: bool = True, long_poll: int = 0) -> in
     return handled
 
 
-def serve_refresh_until(end_hhmm: str = "15:25", *, poll_timeout: int = 25) -> None:
+def serve_refresh_until(end_hhmm: str = "23:50", *, poll_timeout: int = 25) -> None:
     eh, em = map(int, end_hhmm.split(":"))
     print(f"refresh poller until {end_hhmm} KST", flush=True)
     while True:
@@ -320,7 +330,7 @@ if __name__ == "__main__":
         n = process_refresh_callbacks(try_kis="--no-kis" not in args, long_poll=0)
         print("handled", n)
     elif "--serve-refresh" in args:
-        until = "15:25"
+        until = "23:50"
         for a in sys.argv[1:]:
             if a.startswith("--until="):
                 until = a.split("=", 1)[1]
