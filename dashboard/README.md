@@ -72,6 +72,6 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 091170은 저장소 밖 런타임 경로(`/workspace/grid-bot-091170`)입니다. 없으면 API는 **봇별 에러**를 넣고 367380은 계속 표시합니다.
 
 091170 파일 매핑 (운영 SSOT): `last_price.json`, `day_ledger.json`(fills / daily_buy_notional / safety_frozen), `orders_state.json`(`open_orders[]` + `slot_id`), `positions.json`(`slots[]` + `positions[]`), `plan.json`(아침 매수/tps/caps/`kis_cash`).  
-실현손익은 `realized_*` / `round_trips`가 있으면 그대로 쓰고, 없으면 `fills`를 **slot_id 또는 TP +50/+75**로만 짝짓습니다. 짝이 없으면 **0**이며 generic FIFO는 만들지 않습니다. 형제 트리의 `ops_summary.py`에 구조화 PnL 헬퍼가 있으면 그걸 우선합니다.
+실현손익은 `realized_*` / `round_trips`가 있으면 그대로 쓰고, 없으면 `fills`를 **slot_id 또는 TP +50/+75**로만 짝짓습니다. 짝이 없으면 **0**이며 generic FIFO는 만들지 않습니다. 형제 트리의 `ops_summary.py`(`build_text()` 포함)가 있으면 그걸 우선합니다.
 
 선택 설정: `dashboard/portfolio.json` 또는 `PORTFOLIO_CONFIG`에 `{"bots":{"091170":{"root":"..."}}}` .
