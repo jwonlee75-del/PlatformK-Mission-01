@@ -53,6 +53,17 @@ _WATCH_FILES = (
 
 # 김프로 slots: offsets -75/-180/-330/-525, TP +50/+75/+75/+75
 _TP_OFFSETS = (50, 75)
+_KIMPRO = {
+    "slot_count": 4,
+    "slot_offsets": [-75, -180, -330, -525],
+    "qty_per_slot": 5,
+    "tp_offsets": [50, 75, 75, 75],
+    "daily_buy_cap": 800_000,
+    "order_cap": 100_000,
+    "sibling_cash_reserve": 200_000,
+    "session_start": "09:05",
+    "session_end": "15:00",
+}
 
 # Slot statuses that mean "we hold inventory here"
 _HOLDING = {
@@ -380,8 +391,72 @@ def _pair_fills_to_rts(fills: list[dict]) -> list[dict]:
     return rts
 
 
+def _call_ops_fn(fn, led: dict) -> Any:
+    for args, kwargs in (
+        ((led,), {}),
+        ((), {"led": led}),
+        ((), {"ledger": led}),
+        ((), {}),
+    ):
+        try:
+            return fn(*args, **kwargs)
+        except TypeError:
+            continue
+        except Exception:
+            return None
+    return None
+
+
+def _pnl_from_ops_text(text: str) -> Optional[dict]:
+    """Best-effort parse of ops_summary.build_text() Korean/ASCII PnL lines."""
+    if not text or not isinstance(text, str):
+        return None
+    import re
+
+    def _grab(*pats: str) -> Optional[float]:
+        for pat in pats:
+            m = re.search(pat, text)
+            if not m:
+                continue
+            raw = m.group(1).replace(",", "").replace("원", "")
+            n = num(raw)
+            if n is not None:
+                return n
+        return None
+
+    gross = _grab(
+        r"총차익[^+\-\d]*([+\-]?\d[\d,]*)",
+        r"realized_gross[^+\-\d]*([+\-]?\d[\d,]*)",
+        r"실현\s*\(총[^)]*\)[^+\-\d]*([+\-]?\d[\d,]*)",
+    )
+    net = _grab(
+        r"순익[^+\-\d]*([+\-]?\d[\d,]*)",
+        r"실현\s*\(순[^)]*\)[^+\-\d]*([+\-]?\d[\d,]*)",
+        r"realized_net[^+\-\d]*([+\-]?\d[\d,]*)",
+    )
+    realized = _grab(
+        r"실현(?:손익| PnL|pnl)?[^+\-\d]*([+\-]?\d[\d,]*)",
+        r"\bPnL[^+\-\d]*([+\-]?\d[\d,]*)",
+    )
+    if gross is None and net is None and realized is None:
+        return None
+    out: dict[str, Any] = {"source": "ops_summary.build_text"}
+    if gross is not None:
+        out["realized_gross"] = gross
+    if net is not None:
+        out["realized_net_est"] = net
+        out["realized"] = net
+    elif realized is not None:
+        out["realized"] = realized
+        if gross is None:
+            out["realized_gross"] = realized
+    snippet = "\n".join(text.splitlines()[:12])[:400]
+    out["ops_summary_text"] = snippet
+    return out
+
+
 def _try_ops_summary_pnl(root: Path, led: dict) -> Optional[dict]:
-    """Prefer 091170's own ops_summary structured PnL if the file exists."""
+    """Prefer 091170 ops_summary helpers, including build_text() layout/PnL."""
     path = root / "ops_summary.py"
     if not path.exists():
         return None
@@ -399,20 +474,49 @@ def _try_ops_summary_pnl(root: Path, led: dict) -> Optional[dict]:
         fn = getattr(mod, name, None)
         if not callable(fn):
             continue
-        try:
-            out = fn(led)
-        except TypeError:
-            try:
-                out = fn()
-            except Exception:
-                continue
-        except Exception:
-            continue
+        out = _call_ops_fn(fn, led)
         if isinstance(out, dict) and (
             out.get("realized_gross") is not None or out.get("realized") is not None or out.get("round_trips")
         ):
             return out
+    # SSOT: human layout / PnL logic lives in build_text()
+    fn = getattr(mod, "build_text", None)
+    if callable(fn):
+        out = _call_ops_fn(fn, led)
+        if isinstance(out, dict) and (
+            out.get("realized_gross") is not None or out.get("realized") is not None or out.get("round_trips")
+        ):
+            return out
+        if isinstance(out, str):
+            parsed = _pnl_from_ops_text(out)
+            if parsed:
+                return parsed
     return None
+
+
+def _kimpro_config_summary(cfg: dict, plan: dict) -> dict:
+    """367380-style summary plus 김프로 slot/cap defaults from the operator SSOT."""
+    session = cfg.get("session") if isinstance(cfg.get("session"), dict) else {}
+    start = session.get("start") or _KIMPRO["session_start"]
+    end = session.get("end") or _KIMPRO["session_end"]
+    caps = plan.get("caps") if isinstance(plan, dict) and isinstance(plan.get("caps"), dict) else {}
+    summary = config_summary(cfg if isinstance(cfg, dict) else {})
+    summary["session"] = f"{start}–{end}"
+    summary["levels"] = summary.get("levels") or _KIMPRO["slot_count"]
+    summary["slots"] = summary.get("slots") or _KIMPRO["slot_count"]
+    summary["qty_per_order"] = summary.get("qty_per_order") or _KIMPRO["qty_per_slot"]
+    summary["slot_offsets"] = (
+        cfg.get("slot_offsets") or (cfg.get("grid") or {}).get("slot_offsets") or _KIMPRO["slot_offsets"]
+    )
+    summary["tp_offsets"] = cfg.get("tp_offsets") or (cfg.get("grid") or {}).get("tp_offsets") or _KIMPRO["tp_offsets"]
+    summary["tp_display"] = summary.get("tp_display") or "+50/+75/+75/+75"
+    summary["spacing_display"] = summary.get("spacing_display") or "−75/−180/−330/−525"
+    summary["daily_buy_cap"] = caps.get("daily_buy") or caps.get("daily_buy_cap") or _KIMPRO["daily_buy_cap"]
+    summary["order_cap"] = caps.get("order") or caps.get("order_cap") or _KIMPRO["order_cap"]
+    summary["sibling_cash_reserve"] = (
+        caps.get("sibling_cash_reserve") or cfg.get("sibling_cash_reserve") or _KIMPRO["sibling_cash_reserve"]
+    )
+    return summary
 
 
 def _ledger_pnl(led: dict, *, root: Optional[Path] = None) -> dict:
@@ -423,6 +527,9 @@ def _ledger_pnl(led: dict, *, root: Optional[Path] = None) -> dict:
             "realized_gross", "realized_net_est", "realized_net", "realized",
             "round_trips", "fees_day_est", "tax_est",
         )}}
+        ops_text = ops.get("ops_summary_text")
+    else:
+        ops_text = None
 
     rts_raw = led.get("round_trips") or []
     rts = []
@@ -454,7 +561,7 @@ def _ledger_pnl(led: dict, *, root: Optional[Path] = None) -> dict:
 
     source = None
     if ops:
-        source = "ops_summary"
+        source = str(ops.get("source") or "ops_summary")
     elif led.get("realized_gross") is not None or led.get("realized_net_est") is not None:
         source = "day_ledger"
     elif rts and any(r.get("slot") is not None for r in rts):
@@ -478,6 +585,7 @@ def _ledger_pnl(led: dict, *, root: Optional[Path] = None) -> dict:
         "buy_fill_qty": meta.get("buy_fill_qty"),
         "sell_fill_qty": meta.get("sell_fill_qty"),
         "capital_used": num(led.get("capital_used")),
+        "ops_summary_text": ops_text,
     }
 
 
@@ -823,9 +931,12 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
     base = _pick_base(last_blob, plan, led, pos_meta, positions_raw, cfg)
     symbol = cfg.get("symbol") or BOT_ID
     name = cfg.get("symbol_name") or SYMBOL_NAME
-    session = cfg.get("session") or {}
-    if not session:
-        session = {"start": "09:05", "end": "15:00"}
+    session = cfg.get("session") if isinstance(cfg.get("session"), dict) else {}
+    if not session.get("start") or not session.get("end"):
+        session = {
+            "start": session.get("start") or _KIMPRO["session_start"],
+            "end": session.get("end") or _KIMPRO["session_end"],
+        }
     cum = _cumulative_091170(root)
     day_high = _first(last_blob.get("day_high"), led.get("day_high") if isinstance(led, dict) else None)
     ma20 = led.get("ma20") if isinstance(led, dict) else None
@@ -851,6 +962,7 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
         "live_return_pct": live_return_pct,
         "return_pct": live_return_pct,
         "cumulative_3d": cum,
+        "ops_summary_text": pnl.get("ops_summary_text"),
     }
 
     plan_summary = {
@@ -878,7 +990,10 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
                 "price_source": price_source,
                 "cash": cash,
                 "cash_source": cash_source,
-                "config_summary": config_summary(cfg if isinstance(cfg, dict) else {}),
+                "config_summary": _kimpro_config_summary(
+                    cfg if isinstance(cfg, dict) else {},
+                    plan if isinstance(plan, dict) else {},
+                ),
                 "in_session": in_session(session if isinstance(session, dict) else {}),
                 "mode": orders_state.get("mode") or plan.get("mode") or cfg.get("mode"),
                 "safety_frozen": frozen,

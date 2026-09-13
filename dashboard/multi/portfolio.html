@@ -414,11 +414,20 @@ function renderBot(b) {
       ${ov.base != null ? card("베이스", fmtNum(ov.base), "", "세션 base") : ""}
     </div>
     <div class="config-row">
-      <div>격자 <strong>${esc(cfg.spacing_display || "—")} / ${esc(cfg.levels ?? "—")}레벨 / TP ${esc(cfg.tp_display || "—")}</strong></div>
+      ${b.schema === "slots" ? `
+        <div>슬롯 <strong>${esc(cfg.slots ?? 4)} · 오프셋 ${(cfg.slot_offsets || []).join("/") || "−75/−180/−330/−525"} · 수량 ${esc(cfg.qty_per_order ?? 5)}</strong></div>
+        <div>TP <strong>${esc(cfg.tp_display || "+50/+75/+75/+75")}</strong></div>
+        <div>한도 <strong>일매수 ${esc(fmtNum(cfg.daily_buy_cap))} / 주문 ${esc(fmtNum(cfg.order_cap))} / 형제예비 ${esc(fmtNum(cfg.sibling_cash_reserve))}</strong></div>
+      ` : `
+        <div>격자 <strong>${esc(cfg.spacing_display || "—")} / ${esc(cfg.levels ?? "—")}레벨 / TP ${esc(cfg.tp_display || "—")}</strong></div>
+      `}
       <div>세션 <strong>${esc(cfg.session || "—")}</strong>${ov.in_session === true ? " · 장중" : (ov.in_session === false ? " · 장외" : "")}</div>
       ${ov.cash != null ? `<div>현금 <strong>${esc(fmtNum(ov.cash))}원</strong></div>` : ""}
+      ${ov.day_high != null ? `<div>당일고가 <strong>${esc(fmtNum(ov.day_high))}</strong></div>` : ""}
+      ${ov.ma20 != null ? `<div>MA20 <strong>${esc(fmtNum(ov.ma20))}</strong></div>` : ""}
       <div class="muted">파일: ${esc(files || "—")}</div>
     </div>
+    ${pnl.ops_summary_text ? `<div class="empty" style="white-space:pre-wrap">${esc(pnl.ops_summary_text)}</div>` : ""}
     ${cumHtml}
     <div class="grid2">
       <section class="panel" style="box-shadow:none">

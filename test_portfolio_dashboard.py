@@ -219,6 +219,23 @@ class TestAdapter091170(unittest.TestCase):
         self.assertEqual(out["pnl"]["capital_used_today"], 50000)
         self.assertTrue(any(o.get("slot") == 2 for o in out["open_orders"]))
 
+    def test_ops_summary_build_text_pnl(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = _fixture_091170(Path(td), empty_ledger=True)
+            (root / "ops_summary.py").write_text(
+                "def build_text(led=None):\n"
+                "    return '종목 091170\\n  실현(총차익): +180원\\n  실현(순익): +120원\\n'\n",
+                encoding="utf-8",
+            )
+            out = build_091170(root=root, try_kis=False)
+        self.assertEqual(out["pnl"]["realized"], 120)
+        self.assertEqual(out["pnl"]["realized_gross"], 180)
+        self.assertEqual(out["pnl"]["pnl_source"], "ops_summary.build_text")
+        self.assertIn("091170", out["pnl"].get("ops_summary_text") or "")
+        cfg = out["overview"]["config_summary"]
+        self.assertEqual(cfg.get("slot_offsets"), [-75, -180, -330, -525])
+        self.assertEqual(cfg.get("daily_buy_cap"), 800000)
+
     def test_secrets_not_in_payload(self):
         with tempfile.TemporaryDirectory() as td:
             root = _fixture_091170(Path(td), secrets=True)
