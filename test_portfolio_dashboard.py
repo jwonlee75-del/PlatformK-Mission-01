@@ -53,12 +53,27 @@ def _fixture_091170(tmp: Path, *, empty_ledger: bool = False, with_rts: bool = F
         },
     )
     _write(
+        root / "last_price.json",
+        {"last": 10020, "base": 10100, "day_high": 10200, "updated_at": "2026-09-11T12:00:00+09:00"},
+    )
+    _write(
         root / "plan.json",
         {
             "base": 10100,
             "last": 10020,
-            "buys": [{"slot": 2, "price": 9940, "qty": 1, "status": "planned", "odno": "B2"}],
-            "sells": [{"slot": 1, "price": 10030, "qty": 1, "status": "open", "odno": "S1"}],
+            "kis_cash": 250000,
+            "caps": {"daily_buy": 800000, "order": 100000},
+            "buys": [{"slot_id": 2, "price": 9940, "qty": 5, "status": "planned", "odno": "B2"}],
+            "tps": [{"slot_id": 1, "price": 10030, "qty": 5, "status": "open", "odno": "S1"}],
+        },
+    )
+    _write(
+        root / "orders_state.json",
+        {
+            "open_orders": [
+                {"side": "BUY", "price": 9940, "qty": 5, "status": "open", "slot_id": 2, "order_id": "B2"},
+                {"side": "SELL", "price": 10030, "qty": 5, "status": "open", "slot_id": 1, "order_id": "S1"},
+            ]
         },
     )
     if empty_ledger:
@@ -174,6 +189,35 @@ class TestAdapter091170(unittest.TestCase):
         cum = out2["pnl"]["cumulative_3d"]
         if cum is not None:
             self.assertIn("realized_net_est", cum)
+
+    def test_last_price_json_and_slot_fill_pnl(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = _fixture_091170(Path(td), empty_ledger=True)
+            _write(
+                root / "day_ledger.json",
+                {
+                    "session_date": "2026-09-11",
+                    "daily_buy_notional": 50000,
+                    "safety_frozen": False,
+                    "freeze_reasons": [],
+                    "ma20": 9900,
+                    "ratchet_steps": 1,
+                    "fills": [
+                        {"side": "BUY", "price": 10000, "qty": 5, "slot_id": 1, "odno": "1", "tmd": "093000"},
+                        {"side": "SELL", "price": 10050, "qty": 5, "slot_id": 1, "odno": "2", "tmd": "100000"},
+                    ],
+                },
+            )
+            out = build_091170(root=root, try_kis=False)
+        self.assertEqual(out["overview"]["last_price"], 10020)
+        self.assertEqual(out["overview"]["price_source"], "last_price.json")
+        self.assertEqual(out["overview"]["base"], 10100)
+        self.assertEqual(out["overview"]["day_high"], 10200)
+        self.assertEqual(out["overview"]["cash"], 250000)
+        self.assertEqual(out["pnl"]["realized_gross"], 250.0)
+        self.assertEqual(out["pnl"]["round_trip_count"], 1)
+        self.assertEqual(out["pnl"]["capital_used_today"], 50000)
+        self.assertTrue(any(o.get("slot") == 2 for o in out["open_orders"]))
 
     def test_secrets_not_in_payload(self):
         with tempfile.TemporaryDirectory() as td:

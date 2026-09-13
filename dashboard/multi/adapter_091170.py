@@ -1,14 +1,20 @@
 """Read-only adapter for the slot-based 091170 (KODEX 은행) bot.
 
-Expected sibling files (any subset is OK; missing fields stay empty/zero):
+Operator SSOT files under ``GRID_BOT_091170_ROOT`` (never this repo's state):
 
-  positions.json  — ``slots[]`` (and optional meta / safety_frozen)
-  plan.json       — planned buys/sells + session ``base``
-  day_ledger.json — ``fills`` / ``base`` / optional round_trips + realized_*
-  LIVE_APPROVED
-  ledger_archive/day_ledger-YYYYMMDD.json  — best-effort multi-day PnL
+  last_price.json   — last, base, day_high, updated_at
+  day_ledger.json   — daily_buy_notional, fills[], plan_buys/tps, safety_frozen,
+                      freeze_reasons, ratchet_steps, ma20, session_date
+  orders_state.json — orders[], open_orders[] (side/price/qty/status/slot_id)
+  positions.json    — qty, avg_price, positions[], slots[] (repeats_done, buy_price,
+                      open buy/sell ids)
+  plan.json         — morning buys/tps/slots, caps, kis_cash, placed_order_ids
+  LIVE_APPROVED, config.json
+  ledger_archive/   — optional multi-day realized
 
-Never invents realized PnL from fills when round-trips / realized_* are absent.
+PnL: ``realized_*`` / ``round_trips`` if present; else pair ``fills`` by slot_id or
+the bot's TP offsets (+50/+75). Unpaired fills stay zero — no generic FIFO.
+If ``ops_summary.py`` exists on the 091170 root, prefer its structured PnL helpers.
 Never prints secrets.
 """
 from __future__ import annotations
@@ -36,12 +42,17 @@ SCHEMA = "slots"
 
 _WATCH_FILES = (
     "config.json",
+    "last_price.json",
     "positions.json",
     "plan.json",
     "day_ledger.json",
     "orders_state.json",
     "LIVE_APPROVED",
+    "ops_summary.py",
 )
+
+# 김프로 slots: offsets -75/-180/-330/-525, TP +50/+75/+75/+75
+_TP_OFFSETS = (50, 75)
 
 # Slot statuses that mean "we hold inventory here"
 _HOLDING = {
@@ -88,7 +99,7 @@ def _as_list(obj: Any, *keys: str) -> list:
 
 
 def _slot_id(s: dict) -> Any:
-    return _first(s.get("slot"), s.get("slot_id"), s.get("id"), s.get("idx"), s.get("level"))
+    return _first(s.get("slot_id"), s.get("slot"), s.get("id"), s.get("idx"), s.get("level"))
 
 
 def _slot_is_holding(s: dict) -> bool:
@@ -115,8 +126,13 @@ def _normalize_slot(s: dict) -> dict:
         "buy_price": buy,
         "qty": qty,
         "sell_price": num(_first(s.get("sell_price"), s.get("tp"), s.get("tp_price"), s.get("target"))),
-        "buy_order_id": _first(s.get("buy_order_id"), s.get("buy_odno"), s.get("odno_buy")),
-        "sell_order_id": _first(s.get("sell_order_id"), s.get("sell_odno"), s.get("odno_sell")),
+        "buy_order_id": _first(
+            s.get("buy_order_id"), s.get("open_buy_id"), s.get("buy_odno"), s.get("odno_buy")
+        ),
+        "sell_order_id": _first(
+            s.get("sell_order_id"), s.get("open_sell_id"), s.get("sell_odno"), s.get("odno_sell")
+        ),
+        "repeats_done": s.get("repeats_done"),
         "date": s.get("date") or s.get("filled_at") or s.get("opened_at"),
         "holding": _slot_is_holding(s),
     }
@@ -141,9 +157,38 @@ def _positions_from_slots(positions_raw: Any) -> tuple[list[dict], list[dict], d
                 "sell_price": s.get("sell_price"),
                 "slot": s.get("slot"),
                 "status": s.get("status"),
+                "repeats_done": s.get("repeats_done"),
             }
         )
+    # SSOT also has positions[] lots (may exist alongside slots)
+    if not holdings:
+        for p in _as_list(raw, "positions"):
+            buy = num(_first(p.get("buy_price"), p.get("avg_price"), p.get("price")))
+            qty = num(_first(p.get("qty"), p.get("quantity"))) or 0
+            if buy is None and qty <= 0:
+                continue
+            holdings.append(
+                {
+                    "buy_price": buy,
+                    "qty": qty or 1,
+                    "date": p.get("date") or "",
+                    "sell_order_id": _first(p.get("sell_order_id"), p.get("open_sell_id")),
+                    "sell_price": num(p.get("sell_price")),
+                    "slot": _slot_id(p),
+                    "status": p.get("status"),
+                }
+            )
+    # Top-level qty / avg_price when no lots listed
+    if not holdings:
+        avg = num(raw.get("avg_price"))
+        qty = num(raw.get("qty"))
+        if avg is not None and qty and qty > 0:
+            holdings.append({"buy_price": avg, "qty": qty, "date": "", "slot": None, "status": "open"})
     meta = raw.get("meta") if isinstance(raw.get("meta"), dict) else {}
+    if raw.get("qty") is not None:
+        meta = dict(meta)
+        meta.setdefault("qty", raw.get("qty"))
+        meta.setdefault("avg_price", raw.get("avg_price"))
     return holdings, slots, meta
 
 
@@ -151,8 +196,11 @@ def _iter_plan_sides(plan: dict) -> list[tuple[str, dict]]:
     mapping = (
         ("buys", "BUY"),
         ("sells", "SELL"),
+        ("tps", "SELL"),
         ("plan_buys", "BUY"),
         ("plan_sells", "SELL"),
+        ("plan_tps", "SELL"),
+        ("morning_buys", "BUY"),
         ("buy_orders", "BUY"),
         ("sell_orders", "SELL"),
         ("pending_buys", "BUY"),
@@ -197,7 +245,7 @@ def _plan_to_orders(plan: dict) -> list[dict]:
 
 
 def _orders_from_orders_state(raw: dict) -> list[dict]:
-    rows = raw.get("orders") or raw.get("all_orders") or []
+    rows = raw.get("open_orders") or raw.get("orders") or raw.get("all_orders") or []
     open_orders = []
     for o in rows:
         if not isinstance(o, dict):
@@ -248,6 +296,7 @@ def _fills_from_ledger(led: dict) -> list[dict]:
             v = src.get(key)
             if isinstance(v, list):
                 raw.extend(x for x in v if isinstance(x, dict))
+    # SSOT: plan_buys / tps on the ledger are planned, not fills — skip as trades
     today = str(led.get("date") or now_seoul().strftime("%Y-%m-%d"))
     trades = []
     seen: set[str] = set()
@@ -282,8 +331,99 @@ def _fills_from_ledger(led: dict) -> list[dict]:
     return trades
 
 
-def _ledger_pnl(led: dict) -> dict:
-    """Honest PnL: only realized_* or explicit round_trips. Never FIFO from fills."""
+def _pair_fills_to_rts(fills: list[dict]) -> list[dict]:
+    """Pair fills by slot_id, then by TP offsets (+50/+75). No leftover FIFO."""
+    buys = [dict(f) for f in fills if str(f.get("side") or "").upper() == "BUY"]
+    sells = [dict(f) for f in fills if str(f.get("side") or "").upper() == "SELL"]
+    used_b: set[int] = set()
+    rts: list[dict] = []
+
+    def _take_buy(pred) -> Optional[dict]:
+        for i, b in enumerate(buys):
+            if i in used_b:
+                continue
+            if pred(b):
+                used_b.add(i)
+                return b
+        return None
+
+    for s in sells:
+        sid = _slot_id(s)
+        sp = num(s.get("price"))
+        sq = num(s.get("qty")) or 1
+        b = None
+        if sid is not None:
+            b = _take_buy(lambda x, sid=sid: _slot_id(x) == sid)
+        if b is None and sp is not None:
+            def _tp_match(x, sp=sp):
+                bp = num(x.get("price"))
+                if bp is None:
+                    return False
+                return any(abs((sp - bp) - off) < 1e-6 for off in _TP_OFFSETS)
+            b = _take_buy(_tp_match)
+        if b is None:
+            continue
+        bp = num(b.get("price"))
+        bq = num(b.get("qty")) or 1
+        qty = min(sq, bq)
+        pnl = None if bp is None or sp is None else round((sp - bp) * qty, 2)
+        rts.append(
+            {
+                "buy_price": bp,
+                "sell_price": sp,
+                "qty": qty,
+                "pnl": pnl,
+                "sell_ts": s.get("ts"),
+                "slot": sid if sid is not None else _slot_id(b),
+            }
+        )
+    return rts
+
+
+def _try_ops_summary_pnl(root: Path, led: dict) -> Optional[dict]:
+    """Prefer 091170's own ops_summary structured PnL if the file exists."""
+    path = root / "ops_summary.py"
+    if not path.exists():
+        return None
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("ops_summary_091170", path)
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception:
+        return None
+    for name in ("ledger_pnl", "compute_pnl", "pnl_from_ledger", "build_pnl"):
+        fn = getattr(mod, name, None)
+        if not callable(fn):
+            continue
+        try:
+            out = fn(led)
+        except TypeError:
+            try:
+                out = fn()
+            except Exception:
+                continue
+        except Exception:
+            continue
+        if isinstance(out, dict) and (
+            out.get("realized_gross") is not None or out.get("realized") is not None or out.get("round_trips")
+        ):
+            return out
+    return None
+
+
+def _ledger_pnl(led: dict, *, root: Optional[Path] = None) -> dict:
+    """PnL from realized_*/round_trips, ops_summary, or slot/TP-paired fills."""
+    ops = _try_ops_summary_pnl(root, led) if root is not None else None
+    if ops:
+        led = {**led, **{k: ops[k] for k in ops if k in (
+            "realized_gross", "realized_net_est", "realized_net", "realized",
+            "round_trips", "fees_day_est", "tax_est",
+        )}}
+
     rts_raw = led.get("round_trips") or []
     rts = []
     if isinstance(rts_raw, list):
@@ -292,6 +432,12 @@ def _ledger_pnl(led: dict) -> dict:
                 n = _normalize_rt(rt)
                 if n:
                     rts.append(n)
+
+    fills = _fills_from_ledger(led)
+    if not rts and fills:
+        paired = _pair_fills_to_rts(fills)
+        if paired:
+            rts = paired
 
     gross = num(led.get("realized_gross"))
     net = num(_first(led.get("realized_net_est"), led.get("realized_net"), led.get("realized")))
@@ -302,16 +448,19 @@ def _ledger_pnl(led: dict) -> dict:
         tax = num(led.get("tax_est")) or 0.0
         net = round(gross - fees - tax, 2)
     if net is None and not rts:
-        # Empty ledger → zeros, do not invent
         net = 0.0
         if gross is None:
             gross = 0.0
 
     source = None
-    if led.get("realized_gross") is not None or led.get("realized_net_est") is not None:
+    if ops:
+        source = "ops_summary"
+    elif led.get("realized_gross") is not None or led.get("realized_net_est") is not None:
         source = "day_ledger"
+    elif rts and any(r.get("slot") is not None for r in rts):
+        source = "day_ledger.fills_slot"
     elif rts:
-        source = "day_ledger.round_trips"
+        source = "day_ledger.round_trips" if rts_raw else "day_ledger.fills_tp"
     else:
         source = "day_ledger.empty"
 
@@ -563,6 +712,7 @@ def build_091170(*, root: Path, try_kis: bool = False, kis_quote: Optional[dict]
 
 def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> dict:
     cfg = read_json(root / "config.json", {}) or {}
+    last_blob = read_json(root / "last_price.json", {}) or {}
     positions_raw = read_json(root / "positions.json", {}) or {}
     plan = read_json(root / "plan.json", {}) or {}
     led = read_json(root / "day_ledger.json", {}) or {}
@@ -572,10 +722,16 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
     plan_present = bool(plan)
     open_orders = _orders_from_orders_state(orders_state)
     if not open_orders:
-        open_orders = _plan_to_orders(plan) if isinstance(plan, dict) else []
+        # plan morning buys / tps when orders_state has no working orders
+        extra = []
+        if isinstance(led, dict):
+            extra.extend(_plan_to_orders({"buys": led.get("plan_buys") or [], "tps": led.get("tps") or led.get("plan_tps") or []}))
+        if not extra:
+            extra = _plan_to_orders(plan) if isinstance(plan, dict) else []
+        open_orders = extra
 
     trades = _fills_from_ledger(led) if isinstance(led, dict) else []
-    pnl = _ledger_pnl(led) if isinstance(led, dict) else {
+    pnl = _ledger_pnl(led, root=root) if isinstance(led, dict) else {
         "realized": 0.0,
         "realized_gross": 0.0,
         "round_trips": [],
@@ -583,6 +739,8 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
         "pnl_source": "missing_ledger",
     }
     pnl = _count_fills(trades, pnl)
+    if pnl.get("capital_used") is None and isinstance(led, dict):
+        pnl["capital_used"] = num(led.get("daily_buy_notional"))
 
     last_price = None
     price_source = None
@@ -605,7 +763,11 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
             cash_source = "kis"
 
     if last_price is None:
-        px, src = _pick_price(plan, led, positions_raw, pos_meta, orders_state, cfg)
+        px, src = _pick_price(last_blob)
+        if px is None:
+            px, src = _pick_price(plan, led, positions_raw, pos_meta, orders_state, cfg)
+        elif src:
+            src = "last_price.json"
         if px is not None:
             try:
                 last_price = int(float(px))
@@ -614,7 +776,7 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
                 last_price = None
 
     if cash is None:
-        c, src = _pick_cash(led, positions_raw, pos_meta, plan, orders_state)
+        c, src = _pick_cash(plan, led, positions_raw, pos_meta, orders_state)
         if c is not None:
             try:
                 cash = float(c)
@@ -651,12 +813,23 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
     if capital and float(capital) > 0:
         live_return_pct = round(((mtm + float(realized_for_return)) / float(capital)) * 100, 4)
 
-    frozen, reasons = _safety_frozen(positions_raw, pos_meta, plan, led, orders_state, cfg)
-    base = _pick_base(plan, led, pos_meta, positions_raw, cfg)
+    frozen, reasons = _safety_frozen(positions_raw, pos_meta, plan, led, orders_state, cfg, last_blob)
+    if not reasons and isinstance(led, dict) and led.get("freeze_reasons"):
+        fr = led.get("freeze_reasons")
+        if isinstance(fr, list):
+            reasons = [str(x) for x in fr]
+        elif fr:
+            reasons = [str(fr)]
+    base = _pick_base(last_blob, plan, led, pos_meta, positions_raw, cfg)
     symbol = cfg.get("symbol") or BOT_ID
     name = cfg.get("symbol_name") or SYMBOL_NAME
     session = cfg.get("session") or {}
+    if not session:
+        session = {"start": "09:05", "end": "15:00"}
     cum = _cumulative_091170(root)
+    day_high = _first(last_blob.get("day_high"), led.get("day_high") if isinstance(led, dict) else None)
+    ma20 = led.get("ma20") if isinstance(led, dict) else None
+    ratchet = led.get("ratchet_steps") if isinstance(led, dict) else None
 
     pnl_out = {
         "realized": round(float(pnl.get("realized") or 0), 2),
@@ -685,6 +858,8 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
         "base": num(base) if base is not None else base,
         "buy_count": sum(1 for o in open_orders if str(o.get("side") or "").upper() == "BUY"),
         "sell_count": sum(1 for o in open_orders if str(o.get("side") or "").upper() == "SELL"),
+        "caps": plan.get("caps") if isinstance(plan, dict) else None,
+        "placed_order_ids_count": len(plan.get("placed_order_ids") or []) if isinstance(plan, dict) else 0,
         "keys": sorted(plan.keys())[:20] if isinstance(plan, dict) else [],
     }
 
@@ -709,7 +884,15 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
                 "safety_frozen": frozen,
                 "safety_reasons": reasons,
                 "base": num(base) if base is not None else base,
-                "ref_price": num(orders_state.get("ref_price") or plan.get("ref_price") or plan.get("last")),
+                "day_high": num(day_high) if day_high is not None else day_high,
+                "ma20": num(ma20) if ma20 is not None else ma20,
+                "ratchet_steps": ratchet,
+                "ref_price": num(
+                    last_blob.get("last")
+                    or orders_state.get("ref_price")
+                    or plan.get("ref_price")
+                    or plan.get("last")
+                ),
             },
             "live_approved": live_approved(root),
             "kis": kis,
@@ -725,6 +908,6 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
             "trades": trades[:100],
             "pnl": pnl_out,
             "files_present": list_present_files(root, list(_WATCH_FILES)),
-            "ledger_date": led.get("date") if isinstance(led, dict) else None,
+            "ledger_date": (led.get("session_date") or led.get("date")) if isinstance(led, dict) else None,
         }
     )
