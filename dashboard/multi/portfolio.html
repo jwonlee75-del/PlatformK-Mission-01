@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Grid 포트폴리오" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23121821'/%3E%3Ctext x='90' y='108' text-anchor='middle' font-size='64' fill='%233dd6c6' font-family='system-ui,sans-serif' font-weight='700'%3EP%3C/text%3E%3C/svg%3E" />
+  <meta http-equiv="refresh" content="120" />
+  <title>Grid Bot · 포트폴리오</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --panel2: #18202b;
+      --border: #243041;
+      --text: #e7eef8;
+      --muted: #8b9bb0;
+      --accent: #3dd6c6;
+      --accent2: #6ea8fe;
+      --good: #3dd68c;
+      --bad: #ff6b7a;
+      --warn: #f0c14a;
+      --buy: #3dd68c;
+      --sell: #ff8a6b;
+      --shadow: 0 8px 24px rgba(0,0,0,.35);
+      --radius: 16px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+      --tap: 48px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { font-size: 16px; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      font-size: 1rem;
+      line-height: 1.45;
+      background: radial-gradient(1200px 600px at 10% -10%, #152033 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    header {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+      padding: 18px 20px 10px; max-width: 1400px; margin: 0 auto;
+    }
+    header h1 { font-size: 1.4rem; margin: 0; letter-spacing: -.02em; }
+    header .sub { color: var(--muted); font-size: 1rem; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 999px; font-size: .9rem;
+      border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
+      min-height: 40px;
+    }
+    .btn-refresh {
+      appearance: none; border: 1px solid #2a6b5e; background: linear-gradient(180deg,#1a3a34,#14302b);
+      color: var(--accent); font: inherit; font-weight: 650; font-size: 1rem;
+      padding: 12px 20px; border-radius: 12px; min-height: var(--tap); min-width: 120px;
+      cursor: pointer; box-shadow: var(--shadow);
+    }
+    .btn-refresh:active { transform: scale(.98); opacity: .9; }
+    .btn-refresh:disabled { opacity: .55; cursor: wait; }
+    .hero-pnl {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+    .hero-pnl .card { padding: 18px; }
+    .hero-pnl .card .label { font-size: .85rem; }
+    .hero-pnl .card .value { font-size: 1.65rem; }
+    .offline-banner {
+      display: none; max-width: 1400px; margin: 8px auto; padding: 10px 14px;
+      background: #2a2410; border: 1px solid #5a4a20; color: var(--warn);
+      border-radius: 12px; font-size: .95rem;
+    }
+    .badge.ok { color: var(--good); border-color: #245a42; }
+    .badge.warn { color: var(--warn); border-color: #5a4a20; }
+    .badge.bad { color: var(--bad); border-color: #5a2430; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    main {
+      max-width: 1400px; margin: 0 auto; padding: 12px 16px 40px;
+      display: grid; gap: 16px;
+    }
+    .cards {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+    .card {
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; box-shadow: var(--shadow);
+    }
+    .card .label { color: var(--muted); font-size: .8rem; margin-bottom: 6px; }
+    .card .value { font-size: 1.3rem; font-weight: 650; font-variant-numeric: tabular-nums; word-break: break-word; }
+    .card .hint { color: var(--muted); font-size: .72rem; margin-top: 4px; }
+    .pos { color: var(--good); }
+    .neg { color: var(--bad); }
+    .grid2 {
+      display: grid; gap: 14px;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    section.panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+    }
+    section.panel h2 {
+      margin: 0; padding: 12px 16px; font-size: .95rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    section.panel h2 span.meta { color: var(--muted); font-weight: 400; font-size: .78rem; }
+    .bot-head {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+    }
+    .bot-head h3 { margin: 0; font-size: 1.15rem; }
+    .bot-head .price { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 1.2rem; }
+    .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+    th, td {
+      padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border);
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    th { color: var(--muted); font-weight: 550; background: rgba(0,0,0,.15); position: sticky; top: 0; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .side-BUY { color: var(--buy); font-weight: 600; }
+    .side-SELL { color: var(--sell); font-weight: 600; }
+    .empty { padding: 18px; color: var(--muted); font-size: .85rem; }
+    .config-row {
+      display: flex; flex-wrap: wrap; gap: 10px 18px;
+      padding: 12px 16px; color: var(--muted); font-size: .85rem;
+    }
+    .config-row strong { color: var(--text); font-weight: 600; }
+    footer {
+      max-width: 1400px; margin: 0 auto; padding: 0 16px 28px;
+      color: var(--muted); font-size: .75rem;
+    }
+    .err {
+      margin: 8px 16px; padding: 10px 12px; border-radius: 10px;
+      background: #2a1218; border: 1px solid #5a2430; color: var(--bad); font-size: .85rem;
+    }
+    code { font-family: var(--mono); font-size: .85em; }
+    .bot-wrap { display: grid; gap: 12px; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>포트폴리오 대시보드</h1>
+      <div class="sub">367380 ACE 나스닥100 · 091170 KODEX 은행</div>
+    </div>
+    <span class="badge" id="live367"><span class="dot"></span><span>367380 LIVE</span></span>
+    <span class="badge" id="live091"><span class="dot"></span><span>091170 LIVE</span></span>
+    <span class="badge" id="frz367"><span class="dot"></span><span>367380 동결</span></span>
+    <span class="badge" id="frz091"><span class="dot"></span><span>091170 동결</span></span>
+    <span class="badge" id="kisBadge"><span class="dot"></span><span id="kisText">KIS</span></span>
+    <span class="badge" id="refreshBadge">갱신: —</span>
+    <button type="button" class="btn-refresh" id="btnRefresh" onclick="manualRefresh()">🔄 새로고침</button>
+  </header>
+
+  <div id="offlineBanner" class="offline-banner">파일 기반 오프라인 · KIS 시세 없이 로컬 JSON으로 표시</div>
+  <div id="errorBox" class="err" style="display:none; max-width:1400px; margin:8px auto;"></div>
+
+  <main>
+    <section class="panel">
+      <h2>합산 성과 <span class="meta" id="heroMeta">포트폴리오</span></h2>
+      <div class="hero-pnl" id="heroPnl" style="padding:12px;"></div>
+    </section>
+    <div id="botsRoot"></div>
+  </main>
+
+  <footer>
+    자동 갱신 ~15초 · 읽기 전용(주문/취소 없음) ·
+    <code>/api/portfolio</code> ·
+    <code>?skip_kis=1</code>
+  </footer>
+
+<script>
+const REFRESH_MS = 15000;
+const qs = new URLSearchParams(location.search);
+const SKIP_KIS = ["1", "true", "yes"].includes((qs.get("skip_kis") || "").toLowerCase());
+const API = SKIP_KIS ? "/api/portfolio?skip_kis=1" : "/api/portfolio";
+
+function fmtNum(n, digits=0) {
+  if (n === null || n === undefined || n === "") return "—";
+  const x = Number(n);
+  if (Number.isNaN(x)) return String(n);
+  return x.toLocaleString("ko-KR", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
+function fmtPct(n, digits=2) {
+  if (n === null || n === undefined || n === "") return "—";
+  const x = Number(n);
+  if (Number.isNaN(x)) return String(n);
+  return (x >= 0 ? "+" : "") + x.toFixed(digits) + "%";
+}
+function clsPnL(n) {
+  const x = Number(n);
+  if (Number.isNaN(x) || x === 0) return "";
+  return x > 0 ? "pos" : "neg";
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function empty(msg) { return `<div class="empty">${esc(msg)}</div>`; }
+function table(headers, rows, rowFn) {
+  if (!rows || !rows.length) return empty("데이터 없음");
+  const th = headers.map(h => `<th>${esc(h)}</th>`).join("");
+  const body = rows.map(rowFn).join("");
+  return `<table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`;
+}
+function setBadge(el, state, label) {
+  el.classList.remove("ok", "warn", "bad");
+  if (state) el.classList.add(state);
+  const span = el.querySelector("span:last-child");
+  if (span) span.textContent = label;
+}
+function card(label, value, cls, hint) {
+  return `<div class="card"><div class="label">${esc(label)}</div><div class="value ${cls || ""}">${esc(value)}</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ""}</div>`;
+}
+
+function liveLabel(la, id) {
+  if (la && la.valid_today) return ["ok", `${id} LIVE · 오늘`];
+  if (la && la.present) return ["warn", `${id} LIVE · 날짜 불일치`];
+  return ["bad", `${id} LIVE 미승인`];
+}
+
+function renderHero(d) {
+  const h = d.hero || {};
+  const cum = h.cumulative_3d;
+  refreshBadge.textContent = "갱신: " + (d.generated_at || "—");
+  heroMeta.textContent = `${h.bots_ok ?? 0}/${h.bots_total ?? 2}봇 · ${d.skip_kis ? "KIS 스킵" : "KIS 선택"}`;
+  const rows = [
+    ["당일 실현(순)", fmtNum(h.realized, 0) + "원", clsPnL(h.realized), ""],
+    ["당일 실현(총)", fmtNum(h.realized_gross, 0) + "원", clsPnL(h.realized_gross), ""],
+    ["평가(MTM)", fmtNum(h.mtm, 0) + "원", clsPnL(h.mtm), "오픈 포지션"],
+    ["합계(추정)", fmtNum(h.total_est, 0) + "원", clsPnL(h.total_est), ""],
+    ["오픈 원가", fmtNum(h.cost_basis, 0) + "원", "", ""],
+    ["현금", h.cash != null ? fmtNum(h.cash, 0) + "원" : "—", "", h.cash_source || ""],
+    ["미체결", `${fmtNum(h.open_orders)}건`, "", ""],
+    ["포지션", `${fmtNum(h.positions)}건 · ${fmtNum(h.position_qty)}주`, "", ""],
+  ];
+  if (cum && (cum.realized_net_est != null || cum.realized_gross != null)) {
+    rows.splice(2, 0, [
+      "누적 실현(순)",
+      fmtNum(cum.realized_net_est, 0) + "원",
+      clsPnL(cum.realized_net_est),
+      (cum.sources || []).join(" + ") || "3거래일",
+    ]);
+  }
+  heroPnl.innerHTML = rows.map(([l,v,c,h]) => card(l,v,c,h)).join("");
+
+  const offline = document.getElementById("offlineBanner");
+  if (offline) offline.style.display = d.skip_kis || (d.kis && d.kis.skipped && !d.kis.ok) ? "block" : "none";
+
+  const kis = d.kis || {};
+  if (kis.ok) setBadge(kisBadge, "ok", "KIS OK");
+  else if (kis.skipped) setBadge(kisBadge, "warn", "KIS 스킵 · 파일");
+  else setBadge(kisBadge, "warn", "KIS 오프라인");
+}
+
+function renderBot(b) {
+  const ov = b.overview || {};
+  const pnl = b.pnl || {};
+  const la = b.live_approved || {};
+  const id = b.id || "?";
+  const name = ov.symbol_name || id;
+  const [ls, ll] = liveLabel(la, id);
+  const frozen = !!ov.safety_frozen;
+  const frzState = frozen ? "warn" : "ok";
+  const frzText = frozen ? `동결 ${((ov.safety_reasons || [])[0] || "ON")}` : "동결 아님";
+
+  if (id === "367380") {
+    setBadge(live367, ls, ll);
+    setBadge(frz367, frzState, `367380 ${frzText}`);
+  } else if (id === "091170") {
+    setBadge(live091, ls, ll);
+    setBadge(frz091, frzState, `091170 ${frzText}`);
+  }
+
+  if (!b.ok) {
+    const msg = (b.error && (b.error.message || b.error.code)) || "봇 상태를 읽지 못했습니다";
+    return `<section class="panel">
+      <div class="bot-head">
+        <h3>${esc(name)} <span class="muted">(${esc(id)})</span></h3>
+        <span class="badge bad">${esc(b.error && b.error.code || "error")}</span>
+      </div>
+      <div class="err">${esc(msg)}</div>
+      <div class="empty">경로: <code>${esc(b.root || "")}</code> · 존재=${b.root_exists ? "예" : "아니오"}</div>
+    </section>`;
+  }
+
+  const cfg = ov.config_summary || {};
+  const orders = b.open_orders || [];
+  const pos = b.positions || [];
+  const slots = b.slots || [];
+  const trades = b.trades || [];
+  const rts = pnl.round_trips || [];
+  const cum = pnl.cumulative_3d;
+
+  const orderTable = table(
+    ["ID", "Side", "가격", "수량", "상태", "슬롯/태그"],
+    orders,
+    o => `<tr>
+      <td>${esc(o.order_id || "")}</td>
+      <td class="side-${esc(o.side)}">${esc(o.side || "")}</td>
+      <td>${fmtNum(o.price)}</td>
+      <td>${fmtNum(o.qty)}</td>
+      <td>${esc(o.status || "")}</td>
+      <td>${esc(o.slot != null ? "slot " + o.slot : (o.client_tag || o.source || ""))}</td>
+    </tr>`
+  );
+
+  const posTable = table(
+    b.schema === "slots" ? ["슬롯", "매수가", "수량", "목표가", "상태"] : ["매수가", "수량", "일자", "매도주문"],
+    pos,
+    p => b.schema === "slots"
+      ? `<tr>
+          <td>${esc(p.slot ?? "")}</td>
+          <td>${fmtNum(p.buy_price)}</td>
+          <td>${fmtNum(p.qty)}</td>
+          <td>${fmtNum(p.sell_price)}</td>
+          <td>${esc(p.status || "")}</td>
+        </tr>`
+      : `<tr>
+          <td>${fmtNum(p.buy_price ?? p.price)}</td>
+          <td>${fmtNum(p.qty)}</td>
+          <td>${esc(p.date || "")}</td>
+          <td>${esc(p.sell_order_id || "—")}</td>
+        </tr>`
+  );
+
+  const slotTable = (b.schema === "slots" && slots.length)
+    ? table(
+        ["슬롯", "상태", "매수가", "수량", "매도가"],
+        slots,
+        s => `<tr>
+          <td>${esc(s.slot ?? "")}</td>
+          <td>${esc(s.status || "")}</td>
+          <td>${fmtNum(s.buy_price)}</td>
+          <td>${fmtNum(s.qty)}</td>
+          <td>${fmtNum(s.sell_price)}</td>
+        </tr>`
+      )
+    : "";
+
+  const rtTable = rts.length ? table(
+    ["매수", "매도", "수량", "PnL", "시각"],
+    rts.slice().reverse(),
+    r => {
+      const pn = r.pnl ?? r.pnl_gross;
+      return `<tr>
+        <td>${fmtNum(r.buy_price ?? r.buy)}</td>
+        <td>${fmtNum(r.sell_price ?? r.sell)}</td>
+        <td>${fmtNum(r.qty)}</td>
+        <td class="${clsPnL(pn)}">${fmtNum(pn, 2)}</td>
+        <td>${esc(r.sell_ts || "")}</td>
+      </tr>`;
+    }
+  ) : empty("라운드트립 없음 (원장에 없으면 0으로 표시)");
+
+  const tradeTable = table(
+    ["시각", "Side", "가격", "수량", "주문ID"],
+    trades.slice(0, 40),
+    t => `<tr>
+      <td>${esc(t.ts || "")}</td>
+      <td class="side-${esc(t.side)}">${esc(t.side || "")}</td>
+      <td>${fmtNum(t.price)}</td>
+      <td>${fmtNum(t.qty)}</td>
+      <td>${esc(t.order_id || "")}</td>
+    </tr>`
+  );
+
+  let cumHtml = "";
+  if (cum && (cum.realized_net_est != null || cum.available_days)) {
+    const parts = (cum.per_day || []).map(r => {
+      try {
+        const d = new Date(r.date + "T00:00:00+09:00");
+        const lab = `${d.getMonth()+1}/${d.getDate()}`;
+        return r.available ? `${lab} ${fmtNum(r.realized_net_est, 0)}` : `${lab}: n/a`;
+      } catch (e) {
+        return r.date;
+      }
+    }).join(" · ");
+    cumHtml = `<div class="empty">누적 ${fmtNum(cum.available_days)}일 · 순 ${fmtNum(cum.realized_net_est, 0)}원 · ${esc(parts)}</div>`;
+  }
+
+  const buyCnt = pnl.buy_fill_count;
+  const sellCnt = pnl.sell_fill_count;
+  const files = (b.files_present || []).join(", ");
+
+  return `<section class="panel">
+    <div class="bot-head">
+      <h3>${esc(name)} <span class="muted">(${esc(ov.symbol || id)})</span></h3>
+      <div class="price">${fmtNum(ov.last_price)} <span class="hint muted">${esc(ov.price_source || "")}</span></div>
+      <span class="badge ${ls}">${esc(ll)}</span>
+      <span class="badge ${frzState}">${esc(frzText)}</span>
+      <span class="badge">${esc(b.schema === "slots" ? "슬롯" : "그리드")}</span>
+    </div>
+    <div class="cards" style="padding:12px;">
+      ${card("실현 PnL(순)", fmtNum(pnl.realized, 0) + "원", clsPnL(pnl.realized), pnl.pnl_source || "")}
+      ${card("총차익", pnl.realized_gross != null ? fmtNum(pnl.realized_gross, 0) + "원" : "—", clsPnL(pnl.realized_gross), "")}
+      ${card("평가(MTM)", fmtNum(pnl.mtm, 0) + "원", clsPnL(pnl.mtm), "원가 " + fmtNum(pnl.cost_basis, 0))}
+      ${card("체결", `매수 ${fmtNum(buyCnt)} / 매도 ${fmtNum(sellCnt)}`, "", "")}
+      ${card("미체결/플랜", `${orders.length}건`, "", b.plan && b.plan.present ? "plan.json" : "")}
+      ${card("포지션", `${b.positions_meta?.count ?? pos.length}건 · ${b.positions_meta?.total_qty ?? 0}주`, "", "")}
+      ${card("라이브 수익률", pnl.live_return_pct != null ? fmtPct(pnl.live_return_pct, 4) : "—", clsPnL(pnl.live_return_pct), "")}
+      ${ov.base != null ? card("베이스", fmtNum(ov.base), "", "세션 base") : ""}
+    </div>
+    <div class="config-row">
+      <div>격자 <strong>${esc(cfg.spacing_display || "—")} / ${esc(cfg.levels ?? "—")}레벨 / TP ${esc(cfg.tp_display || "—")}</strong></div>
+      <div>세션 <strong>${esc(cfg.session || "—")}</strong>${ov.in_session === true ? " · 장중" : (ov.in_session === false ? " · 장외" : "")}</div>
+      ${ov.cash != null ? `<div>현금 <strong>${esc(fmtNum(ov.cash))}원</strong></div>` : ""}
+      <div class="muted">파일: ${esc(files || "—")}</div>
+    </div>
+    ${cumHtml}
+    <div class="grid2">
+      <section class="panel" style="box-shadow:none">
+        <h2>미체결 / 플랜 매수 <span class="meta">${orders.length}건</span></h2>
+        <div class="scroll">${orderTable}</div>
+      </section>
+      <section class="panel" style="box-shadow:none">
+        <h2>포지션${b.schema === "slots" ? " / 슬롯" : ""} <span class="meta">${pos.length}건</span></h2>
+        <div class="scroll">${posTable}${slotTable && pos.length ? `<h2>전체 슬롯</h2>${slotTable}` : slotTable}</div>
+      </section>
+    </div>
+    <section class="panel" style="box-shadow:none">
+      <h2>라운드트립 / 원장 <span class="meta">${fmtNum(pnl.round_trip_count)}회</span></h2>
+      <div class="scroll">${rtTable}</div>
+    </section>
+    <section class="panel" style="box-shadow:none">
+      <h2>당일 체결 <span class="meta">${trades.length}건</span></h2>
+      <div class="scroll">${tradeTable}</div>
+    </section>
+  </section>`;
+}
+
+function render(d) {
+  renderHero(d);
+  const bots = d.bots || [];
+  botsRoot.innerHTML = `<div class="bot-wrap">${bots.map(renderBot).join("")}</div>`;
+}
+
+let refreshing = false;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  const btn = document.getElementById("btnRefresh");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(API, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (d.error && !d.bots) throw new Error(d.message || d.error);
+    errorBox.style.display = "none";
+    render(d);
+  } catch (e) {
+    errorBox.style.display = "block";
+    errorBox.textContent = "상태 로드 실패: " + e.message;
+  } finally {
+    refreshing = false;
+    if (btn) btn.disabled = false;
+  }
+}
+function manualRefresh() { refresh(); }
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

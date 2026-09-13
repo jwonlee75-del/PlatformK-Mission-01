@@ -157,6 +157,7 @@
     <span class="badge" id="liveBadge"><span class="dot"></span><span id="liveText">LIVE 게이트</span></span>
     <span class="badge" id="kisBadge"><span class="dot"></span><span id="kisText">KIS</span></span>
     <span class="badge" id="sessBadge"><span class="dot"></span><span id="sessText">세션</span></span>
+    <span class="badge" id="frzBadge"><span class="dot"></span><span id="frzText">동결</span></span>
     <span class="badge" id="refreshBadge">갱신: —</span>
     <button type="button" class="btn-refresh" id="btnRefresh" onclick="manualRefresh()">🔄 새로고침</button>
   </header>
@@ -273,6 +274,9 @@ function render(d) {
   if (ov.in_session === true) setBadge(sessBadge, sessText, "ok", "장중 세션");
   else if (ov.in_session === false) setBadge(sessBadge, sessText, "warn", "세션 외");
   else setBadge(sessBadge, sessText, "", "세션 ?");
+
+  if (ov.safety_frozen) setBadge(frzBadge, frzText, "warn", "신규매수 동결");
+  else setBadge(frzBadge, frzText, "ok", "동결 아님");
 
   refreshBadge.textContent = "갱신: " + (d.generated_at || "—");
 

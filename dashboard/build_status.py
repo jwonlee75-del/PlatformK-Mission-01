@@ -912,6 +912,8 @@ def build_status(*, try_kis: bool = True) -> dict:
                 "tick_size": grid.get("tick_size"),
             },
             "in_session": in_session,
+            "safety_frozen": bool(pos_meta.get("safety_frozen")),
+            "safety_reasons": pos_meta.get("safety_reasons") or pos_meta.get("freeze_reasons") or [],
             "mode": orders_state.get("mode") or log_meta.get("mode_hint"),
             "ref_price": orders_state.get("ref_price"),
             "spacing": orders_state.get("spacing") or pos_meta.get("spacing"),

@@ -86,6 +86,10 @@ jobs:
         run: |
           python -m unittest test_ops_guards -v
 
+      - name: Portfolio dashboard unit tests
+        run: |
+          DASHBOARD_SKIP_KIS=1 python -m unittest test_portfolio_dashboard -v
+
       - name: Paper demo (no live orders)
         run: |
           python - <<'PY'
