@@ -1,0 +1,140 @@
+{
+  "date": "2026-09-14",
+  "updated_at": "2026-09-14T16:31:09+09:00",
+  "symbol": "367380",
+  "eod": true,
+  "session_ended": true,
+  "round_trips": [
+    {
+      "buy_odno": "0000151900",
+      "sell_odno": "0000199100",
+      "buy": 29640,
+      "sell": 29735,
+      "qty": 1,
+      "pnl_gross": 95,
+      "grid_line": 29860,
+      "sell_tmd": "090521",
+      "match": "linked"
+    }
+  ],
+  "realized_gross": 95,
+  "fees_day_est": 9,
+  "tax_est": 15,
+  "realized_net_est": 71.0,
+  "note": "midday_kis_ledger_resync: KIS inquire_daily_ccld; linked-or-FIFO RTs; open lots = positions match or carry+today; no new orders placed; fees_model=0.015%/side on matched RT notionals; tax 15.4% on gross; eod_telegram_summary: marked EOD/session_ended",
+  "fees_model_est": 9,
+  "fees_kis_day_tlex": 210,
+  "capital_used": 268845,
+  "matched_buy_notional": 29640,
+  "open_position_cost": 239205,
+  "today_buy_notional": 118560,
+  "meta": {
+    "buy_fill_count": 4,
+    "sell_fill_count": 1,
+    "buy_fill_qty": 4,
+    "sell_fill_qty": 1,
+    "match_method": "linked_or_FIFO_today_plus_carry_open_lots",
+    "unmatched_buys": [
+      {
+        "odno": "",
+        "buy": 30190,
+        "grid_line": 30190,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 30130,
+        "grid_line": 30130,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 30070,
+        "grid_line": 30070,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 30020,
+        "grid_line": 30020,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 29875,
+        "grid_line": 29880,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 29640,
+        "grid_line": 29740,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 29640,
+        "grid_line": 29800,
+        "source": "positions.json"
+      },
+      {
+        "odno": "",
+        "buy": 29640,
+        "grid_line": 29860,
+        "source": "positions.json"
+      }
+    ],
+    "today_fills": [
+      {
+        "odno": "0000151900",
+        "side": "BUY",
+        "price": 29640,
+        "qty": 1,
+        "tmd": "083538"
+      },
+      {
+        "odno": "0000152000",
+        "side": "BUY",
+        "price": 29640,
+        "qty": 1,
+        "tmd": "083539"
+      },
+      {
+        "odno": "0000152100",
+        "side": "BUY",
+        "price": 29640,
+        "qty": 1,
+        "tmd": "083539"
+      },
+      {
+        "odno": "0000152200",
+        "side": "BUY",
+        "price": 29640,
+        "qty": 1,
+        "tmd": "083540"
+      },
+      {
+        "odno": "0000199100",
+        "side": "SELL",
+        "price": 29735,
+        "qty": 1,
+        "tmd": "090521"
+      }
+    ],
+    "kis_unfilled_count": 0,
+    "open_pin": [
+      30190,
+      30130,
+      30070,
+      30020,
+      29880,
+      29740,
+      29800,
+      29860
+    ],
+    "kis_hldg_qty": 8,
+    "kis_avg": 29785,
+    "kis_last": 29760,
+    "kis_cash": 1180993
+  }
+}

@@ -82,7 +82,7 @@ def _fmt_won(n) -> str:
         return "-"
 
 
-def format_summary(status: dict, *, live_tag: bool = False) -> str:
+def format_summary(status: dict, *, live_tag: bool = False, eod: bool = False) -> str:
     ov = status.get("overview") or {}
     pnl = status.get("pnl") or {}
     orders = status.get("open_orders") or []
@@ -91,6 +91,10 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
     live = status.get("live_approved")
     now = datetime.now(SEOUL).strftime("%m/%d %H:%M:%S")
     tag = " · 실시간" if live_tag else ""
+    if eod:
+        title = f"🏁 장마감 EOD 요약 ({now} KST){tag}"
+    else:
+        title = f"📊 그리드 대시보드 요약 ({now} KST){tag}"
 
     price = ov.get("last_price") or ov.get("price") or ov.get("ref_price")
     cash = ov.get("cash") or ov.get("dnca_tot_amt")
@@ -121,7 +125,7 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
     tp_txt = str(tp) if tp is not None else "-"
 
     lines = [
-        f"📊 그리드 대시보드 요약 ({now} KST){tag}",
+        title,
         "",
         f"종목: {name} ({symbol})",
         f"현재가: {price:,}" if isinstance(price, (int, float)) else f"현재가: {price or '-'}",
@@ -248,10 +252,10 @@ def format_summary(status: dict, *, live_tag: bool = False) -> str:
     return "\n".join(lines)
 
 
-def send_summary(*, try_kis: bool = False, live_tag: bool = False) -> dict:
+def send_summary(*, try_kis: bool = False, live_tag: bool = False, eod: bool = False) -> dict:
     # --kis / refresh: build_status may pull KIS fills into day_ledger when stale
     status = build_status(try_kis=try_kis)
-    text = format_summary(status, live_tag=live_tag or try_kis)
+    text = format_summary(status, live_tag=live_tag or try_kis, eod=eod)
     today = datetime.now(SEOUL).strftime("%Y%m%d")
     payload = {
         "chat_id": CHAT_ID,
@@ -392,5 +396,6 @@ if __name__ == "__main__":
         serve_refresh_until(until)
     else:
         try_kis = "--kis" in args or "--live" in args
-        out = send_summary(try_kis=try_kis, live_tag=try_kis)
+        eod = "--eod" in args
+        out = send_summary(try_kis=try_kis, live_tag=try_kis and not eod, eod=eod)
         print("ok", out["ok"], "message_id", out["message_id"])
