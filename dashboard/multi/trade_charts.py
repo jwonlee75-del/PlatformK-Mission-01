@@ -47,8 +47,8 @@ TR_ID = "FHKST03010230"
 CHART_NAME_RE = re.compile(r"^[0-9]{6}_trades_1m(?:_am)?(?:_[0-9]{8})?\.png$")
 
 BOT_SPECS = (
-    {"id": "367380", "name": "ACE 미국나스닥100", "zoom_morning": False},
-    {"id": "091170", "name": "KODEX 은행", "zoom_morning": True},
+    {"id": "367380", "name": "ACE NASDAQ100", "zoom_morning": False},
+    {"id": "091170", "name": "KODEX Bank", "zoom_morning": True},
 )
 
 _BUILD_LOCK = threading.Lock()
@@ -471,6 +471,7 @@ def render_chart(
             if (not time_from or m["tmd"] >= time_from) and (not time_to or m["tmd"] <= time_to)
         ]
 
+    plt.rcParams["axes.unicode_minus"] = False
     fig, ax = plt.subplots(figsize=(10.2, 3.8), dpi=120)
     fig.patch.set_facecolor("#0b0f14")
     ax.set_facecolor("#0e1520")
