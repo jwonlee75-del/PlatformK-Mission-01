@@ -258,12 +258,13 @@ function liveLabel(la, id) {
   return ["bad", `${id} LIVE 미승인`];
 }
 
+function seoulMd(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso || "?";
+  return `${Number(m[2])}/${Number(m[3])}`;
+}
 function dayChipLabel(rec) {
-  let lab = rec.date || "?";
-  try {
-    const d = new Date((rec.date || "") + "T00:00:00+09:00");
-    if (!Number.isNaN(d.getTime())) lab = `${d.getMonth()+1}/${d.getDate()}`;
-  } catch (e) {}
+  const lab = seoulMd(rec.date);
   if (!rec.available) return { lab, text: `${lab}: n/a`, na: true };
   return { lab, text: `${lab} ${fmtNum(rec.realized_net_est, 0)}원`, na: false };
 }
