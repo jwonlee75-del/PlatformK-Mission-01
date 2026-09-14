@@ -6,6 +6,8 @@
 Serves:
   GET /                → portfolio.html
   GET /api/portfolio   → aggregated JSON (files + optional KIS read-only quotes)
+  GET /api/charts      → snapshot index; ?refresh=1 rebuilds (read-only KIS)
+  GET /charts/<png>    → 1m trade-snapshot PNG
   GET /health          → {"ok":true}
 
 No live orders. Never prints secrets/tokens.
@@ -26,6 +28,12 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from build_portfolio_status import build_portfolio_status  # noqa: E402
+from trade_charts import (  # noqa: E402
+    attach_charts,
+    charts_dir,
+    get_or_build_charts,
+    safe_chart_name,
+)
 
 INDEX = HERE / "portfolio.html"
 
@@ -61,6 +69,8 @@ class Handler(BaseHTTPRequestHandler):
             skip = (qs.get("skip_kis") or [""])[0].lower() in ("1", "true", "yes")
             try:
                 status = build_portfolio_status(try_kis=not skip)
+                # Charts: last-known index only. 15s UI refresh must not hit KIS.
+                attach_charts(status)
                 body = json.dumps(status, ensure_ascii=False, default=str).encode("utf-8")
                 self._send(200, body, "application/json; charset=utf-8")
             except Exception as e:  # noqa: BLE001
@@ -71,6 +81,37 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 body = json.dumps(err, ensure_ascii=False).encode("utf-8")
                 self._send(500, body, "application/json; charset=utf-8")
+            return
+
+        if path == "/api/charts":
+            qs = parse_qs(parsed.query or "")
+            skip = (qs.get("skip_kis") or [""])[0].lower() in ("1", "true", "yes")
+            refresh = (qs.get("refresh") or [""])[0].lower() in ("1", "true", "yes")
+            try:
+                index = get_or_build_charts(refresh=refresh, skip_kis=skip)
+                body = json.dumps(index, ensure_ascii=False, default=str).encode("utf-8")
+                self._send(200, body, "application/json; charset=utf-8")
+            except Exception as e:  # noqa: BLE001
+                err = {
+                    "error": type(e).__name__,
+                    "message": str(e)[:200],
+                    "traceback": traceback.format_exc()[-800:],
+                }
+                body = json.dumps(err, ensure_ascii=False).encode("utf-8")
+                self._send(500, body, "application/json; charset=utf-8")
+            return
+
+        if path.startswith("/charts/"):
+            raw = path[len("/charts/") :]
+            name = safe_chart_name(raw)
+            if not name:
+                self._send(404, b"not found", "text/plain; charset=utf-8")
+                return
+            png = charts_dir() / name
+            if not png.is_file():
+                self._send(404, b"chart missing", "text/plain; charset=utf-8")
+                return
+            self._send(200, png.read_bytes(), "image/png")
             return
 
         if path == "/health":
@@ -90,6 +131,7 @@ def main() -> None:
     url = f"http://{args.host}:{args.port}/"
     print(f"Grid bot portfolio dashboard listening on {url}", flush=True)
     print(f"  API: {url}api/portfolio", flush=True)
+    print(f"  Charts: {url}api/charts  {url}charts/<symbol>_trades_1m.png", flush=True)
     print("  Read-only. Single-bot UI remains on dashboard.sh (8787).", flush=True)
     print("  Ctrl+C to stop", flush=True)
     try:

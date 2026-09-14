@@ -172,6 +172,15 @@
     code { font-family: var(--mono); font-size: .85em; }
     .bot-wrap { display: grid; gap: 12px; }
     .muted { color: var(--muted); }
+    .chart-snap { margin: 0; padding: 8px 12px 14px; }
+    .chart-img {
+      width: 100%; height: auto; display: block;
+      border-radius: 12px; background: #0e1520;
+      margin-bottom: 8px; border: 1px solid var(--border);
+    }
+    .chart-snap figcaption {
+      color: var(--muted); font-size: .8rem; text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -206,6 +215,7 @@
   <footer>
     자동 갱신 ~15초 · 읽기 전용(주문/취소 없음) ·
     <code>/api/portfolio</code> ·
+    <code>/api/charts</code> ·
     <code>?skip_kis=1</code>
   </footer>
 
@@ -214,6 +224,9 @@ const REFRESH_MS = 15000;
 const qs = new URLSearchParams(location.search);
 const SKIP_KIS = ["1", "true", "yes"].includes((qs.get("skip_kis") || "").toLowerCase());
 const API = SKIP_KIS ? "/api/portfolio?skip_kis=1" : "/api/portfolio";
+const CHARTS_API = SKIP_KIS ? "/api/charts?skip_kis=1" : "/api/charts";
+let lastCharts = null;
+let chartsLoaded = false;
 
 function fmtNum(n, digits=0) {
   if (n === null || n === undefined || n === "") return "—";
@@ -355,6 +368,7 @@ function renderBot(b) {
       </div>
       <div class="err">${esc(msg)}</div>
       <div class="empty">경로: <code>${esc(b.root || "")}</code> · 존재=${b.root_exists ? "예" : "아니오"}</div>
+      ${chartBlock(b)}
     </section>`;
   }
 
@@ -456,6 +470,7 @@ function renderBot(b) {
       </div>`
     : "";
   const botStrip = dayStripHtml(cum && cum.per_day);
+  const chartHtml = chartBlock(b);
 
   return `<section class="panel">
     <div class="bot-head">
@@ -505,6 +520,7 @@ function renderBot(b) {
       <h2>라운드트립 / 원장 <span class="meta">${fmtNum(pnl.round_trip_count)}회</span></h2>
       <div class="scroll">${rtTable}</div>
     </section>
+    ${chartHtml}
     <section class="panel" style="box-shadow:none">
       <h2>당일 체결 <span class="meta">${trades.length}건</span></h2>
       <div class="scroll">${tradeTable}</div>
@@ -512,23 +528,91 @@ function renderBot(b) {
   </section>`;
 }
 
+function chartFor(b) {
+  const fromIdx = lastCharts && lastCharts.symbols && lastCharts.symbols[b.id];
+  const fromBot = b && b.chart;
+  if (fromIdx && fromIdx.available) return fromIdx;
+  if (fromBot && fromBot.available) return fromBot;
+  return fromIdx || fromBot || {};
+}
+
+function chartBlock(b) {
+  const ch = chartFor(b);
+  const date = ch.date || "";
+  const buys = ch.buy_count;
+  const sells = ch.sell_count;
+  if (ch.available && ch.url) {
+    const bust = encodeURIComponent(ch.generated_at || date || "");
+    const zoom = ch.zoom_url
+      ? `<img class="chart-img" src="${esc(ch.zoom_url)}?t=${bust}" alt="${esc(b.id)} morning 1m trades">`
+      : "";
+    return `<section class="panel chart-panel" style="box-shadow:none">
+      <h2>당일 1분 차트 <span class="meta">${esc(date)} · 매수 ${fmtNum(buys)} / 매도 ${fmtNum(sells)}</span></h2>
+      <figure class="chart-snap">
+        <img class="chart-img" src="${esc(ch.url)}?t=${bust}" alt="${esc(b.id)} 1m BUY/SELL">
+        ${zoom}
+        <figcaption>${esc(date)} · BUY ▲ ${fmtNum(buys)} / SELL ▼ ${fmtNum(sells)}</figcaption>
+      </figure>
+    </section>`;
+  }
+  const reason = ch.empty_reason || "스냅샷 없음";
+  const hint = {
+    not_built: "아직 생성되지 않음 (캐시 없음)",
+    no_cached_bars: "캐시된 분봉 없음 · KIS 스킵",
+    no_bars: "분봉을 가져오지 못함",
+    matplotlib_unavailable: "matplotlib 없음 · 차트 생략",
+    root_missing: "봇 경로 없음",
+    render_failed: "렌더 실패",
+  }[reason] || reason;
+  return `<section class="panel chart-panel" style="box-shadow:none">
+    <h2>당일 1분 차트</h2>
+    <div class="empty">분봉 스냅샷 없음 · ${esc(hint)}</div>
+  </section>`;
+}
+
 function render(d) {
+  if (d && d.charts) lastCharts = d.charts;
+  if (lastCharts && lastCharts.symbols) {
+    for (const b of d.bots || []) {
+      const s = lastCharts.symbols[b.id];
+      if (s) b.chart = s;
+    }
+  }
   renderHero(d);
   const bots = d.bots || [];
   botsRoot.innerHTML = `<div class="bot-wrap">${bots.map(renderBot).join("")}</div>`;
 }
 
+async function pullCharts() {
+  try {
+    const r = await fetch(CHARTS_API, { cache: "no-store" });
+    if (!r.ok) return null;
+    const idx = await r.json();
+    if (idx && idx.symbols) lastCharts = idx;
+    return idx;
+  } catch {
+    return null;
+  }
+}
+
 let refreshing = false;
-async function refresh() {
+async function refresh(opts) {
   if (refreshing) return;
   refreshing = true;
   const btn = document.getElementById("btnRefresh");
   if (btn) btn.disabled = true;
+  const wantCharts = !chartsLoaded || (opts && opts.charts);
   try {
     const r = await fetch(API, { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
     if (d.error && !d.bots) throw new Error(d.message || d.error);
+    if (d.charts) lastCharts = d.charts;
+    if (wantCharts) {
+      const idx = await pullCharts();
+      if (idx) d.charts = idx;
+      chartsLoaded = true;
+    }
     errorBox.style.display = "none";
     render(d);
   } catch (e) {
@@ -539,7 +623,7 @@ async function refresh() {
     if (btn) btn.disabled = false;
   }
 }
-function manualRefresh() { refresh(); }
+function manualRefresh() { refresh({ charts: true }); }
 refresh();
 setInterval(refresh, REFRESH_MS);
 </script>

@@ -59,15 +59,29 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 
 - 기본 URL: `http://127.0.0.1:8790/`
 - JSON API: `http://127.0.0.1:8790/api/portfolio`
+- 분봉 스냅샷: `http://127.0.0.1:8790/api/charts` · `/charts/<symbol>_trades_1m.png`
 - KIS 조회 생략: `/api/portfolio?skip_kis=1` 또는 `DASHBOARD_SKIP_KIS=1`
 
 | 파일 | 역할 |
 |------|------|
 | `dashboard-portfolio.sh` | 포트 8790 런처 |
-| `multi/server_multi.py` | stdlib `http.server` — `/` + `/api/portfolio` |
+| `multi/server_multi.py` | stdlib `http.server` — `/` + `/api/portfolio` + `/api/charts` + PNG |
 | `multi/build_portfolio_status.py` | 두 봇을 공통 스키마로 정규화·합산 |
 | `multi/adapter_091170.py` | 슬롯/`plan.json`/`day_ledger` fills·base 매핑 |
+| `multi/trade_charts.py` | 당일 원장 체결 + 1분봉 스냅샷 (BUY▲/SELL▼) |
 | `multi/portfolio.html` | 모바일 퍼스트 다크 UI, ~15초 자동 갱신 |
+
+### 당일 1분 차트 스냅샷
+
+봇 패널마다 서울 거래일(평일이면 오늘, 주말이면 직전 평일) 1분 OHLC와 그날 원장 체결 마커를 그립니다.
+
+- 367380: `day_ledger.json` / `ledger_archive` 의 `meta.today_fills` (`tmd` HHMMSS)
+- 091170: `day_ledger.json` `fills[]` (ISO `ts` 또는 `tmd`). 아침 체결이 몰리면 전체 + 오전 확대
+- 분봉: KIS `inquire-time-dailychartprice` TR `FHKST03010230` **조회만**. 주문 API 없음
+- 캐시: `DASHBOARD_CHARTS_DIR` (기본 `{367380 root}/logs/charts/`). PNG·분봉 JSON은 커밋하지 않음
+- TTL: `DASHBOARD_CHART_TTL_SEC` (기본 600). 15초 UI 갱신은 `/api/portfolio`만 치고 차트는 디스크 인덱스를 읽음
+- 강제 재생성: `GET /api/charts?refresh=1`
+- `matplotlib` 은 선택 의존성입니다. 없으면 차트만 생략하고 나머지는 그대로입니다 (`pip install matplotlib`)
 
 091170은 저장소 밖 런타임 경로(`/workspace/grid-bot-091170`)입니다. 없으면 API는 **봇별 에러**를 넣고 367380은 계속 표시합니다.
 
