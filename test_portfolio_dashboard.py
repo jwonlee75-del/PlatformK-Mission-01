@@ -19,6 +19,7 @@ from adapter_091170 import build_091170  # noqa: E402
 from build_portfolio_status import build_portfolio_status  # noqa: E402
 from build_status import build_status  # noqa: E402
 from common import redact  # noqa: E402
+from cumulative_pnl import last_n_trading_days  # noqa: E402
 
 
 def _write(path: Path, obj) -> None:
@@ -189,6 +190,99 @@ class TestAdapter091170(unittest.TestCase):
         cum = out2["pnl"]["cumulative_3d"]
         if cum is not None:
             self.assertIn("realized_net_est", cum)
+
+    def test_cumulative_falls_back_to_today_day_ledger(self):
+        """No ledger_archive: matching session_date on root day_ledger.json still counts."""
+        as_of = last_n_trading_days(3)[-1]
+        with tempfile.TemporaryDirectory() as td:
+            root = _fixture_091170(Path(td), empty_ledger=True)
+            arch = root / "ledger_archive"
+            if arch.is_dir():
+                for p in arch.iterdir():
+                    p.unlink()
+                arch.rmdir()
+            self.assertFalse(arch.exists())
+            _write(
+                root / "day_ledger.json",
+                {
+                    "session_date": as_of.isoformat(),
+                    "fills": [
+                        {"side": "BUY", "price": 10000, "qty": 5, "slot_id": 1, "odno": "1", "tmd": "093000"},
+                        {"side": "SELL", "price": 10050, "qty": 5, "slot_id": 1, "odno": "2", "tmd": "100000"},
+                    ],
+                    "realized_gross": 250,
+                    "realized_net_est": 200,
+                },
+            )
+            out = build_091170(root=root, try_kis=False)
+        cum = out["pnl"]["cumulative_3d"]
+        self.assertIsNotNone(cum)
+        self.assertEqual(cum["realized_net_est"], 200)
+        self.assertEqual(cum["realized_gross"], 250)
+        self.assertEqual(cum["available_days"], 1)
+        today_rec = next(r for r in cum["per_day"] if r["date"] == as_of.isoformat())
+        self.assertTrue(today_rec["available"])
+        self.assertEqual(today_rec["source"], "day_ledger.json")
+        self.assertEqual(today_rec["realized_net_est"], 200)
+        for r in cum["per_day"]:
+            if r["date"] != as_of.isoformat():
+                self.assertFalse(r["available"])
+                self.assertTrue(r["gap"])
+                self.assertIsNone(r["realized_net_est"])
+
+    def test_cumulative_from_today_fills_without_realized_fields(self):
+        """session_date + pairable fills, no realized_* and no archive."""
+        as_of = last_n_trading_days(3)[-1]
+        with tempfile.TemporaryDirectory() as td:
+            root = _fixture_091170(Path(td), empty_ledger=True)
+            arch = root / "ledger_archive"
+            if arch.is_dir():
+                for p in arch.iterdir():
+                    p.unlink()
+                arch.rmdir()
+            _write(
+                root / "day_ledger.json",
+                {
+                    "session_date": as_of.isoformat(),
+                    "fills": [
+                        {"side": "BUY", "price": 10000, "qty": 5, "slot_id": 1, "odno": "1", "tmd": "093000"},
+                        {"side": "SELL", "price": 10050, "qty": 5, "slot_id": 1, "odno": "2", "tmd": "100000"},
+                    ],
+                },
+            )
+            out = build_091170(root=root, try_kis=False)
+        cum = out["pnl"]["cumulative_3d"]
+        self.assertIsNotNone(cum)
+        self.assertEqual(cum["realized_gross"], 250.0)
+        self.assertEqual(cum["available_days"], 1)
+        rec = next(r for r in cum["per_day"] if r["date"] == as_of.isoformat())
+        self.assertTrue(rec["available"])
+        self.assertEqual(rec["source"], "day_ledger.json")
+
+    def test_cumulative_does_not_copy_ledger_onto_other_days(self):
+        """A dated ledger must not fill unrelated days in the 3-day window."""
+        days = last_n_trading_days(3)
+        as_of = days[-1]
+        other = days[0]
+        if other == as_of:
+            self.skipTest("need at least two distinct trading days")
+        with tempfile.TemporaryDirectory() as td:
+            root = _fixture_091170(Path(td), empty_ledger=True)
+            _write(
+                root / "day_ledger.json",
+                {
+                    "session_date": as_of.isoformat(),
+                    "realized_gross": 99,
+                    "realized_net_est": 80,
+                },
+            )
+            out = build_091170(root=root, try_kis=False)
+        cum = out["pnl"]["cumulative_3d"]
+        self.assertIsNotNone(cum)
+        by_date = {r["date"]: r for r in cum["per_day"]}
+        self.assertTrue(by_date[as_of.isoformat()]["available"])
+        self.assertFalse(by_date[other.isoformat()]["available"])
+        self.assertIsNone(by_date[other.isoformat()]["realized_net_est"])
 
     def test_last_price_json_and_slot_fill_pnl(self):
         with tempfile.TemporaryDirectory() as td:

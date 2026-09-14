@@ -308,7 +308,7 @@ def _fills_from_ledger(led: dict) -> list[dict]:
             if isinstance(v, list):
                 raw.extend(x for x in v if isinstance(x, dict))
     # SSOT: plan_buys / tps on the ledger are planned, not fills — skip as trades
-    today = str(led.get("date") or now_seoul().strftime("%Y-%m-%d"))
+    today = str(led.get("session_date") or led.get("date") or now_seoul().strftime("%Y-%m-%d"))
     trades = []
     seen: set[str] = set()
     for f in raw:
@@ -686,23 +686,42 @@ def _safety_frozen(*objs: Any) -> tuple[bool, list]:
     return bool(frozen), reasons
 
 
+def _ledger_session_date(led: dict) -> str:
+    """091170 uses session_date; 367380-style files use date."""
+    return str(led.get("session_date") or led.get("date") or "")
+
+
 def _day_record_from_ledger(led: dict, *, source: str, day: date) -> Optional[dict]:
+    """One day's realized from an explicit ledger. Never reuse a file across other days."""
     if not isinstance(led, dict):
         return None
-    if str(led.get("date") or "") not in ("", day.isoformat()):
-        return None
+    key = _ledger_session_date(led)
+    if key:
+        if key != day.isoformat():
+            return None
+    else:
+        # Undated live file counts only as calendar-today — do not copy onto other days.
+        if day != now_seoul().date():
+            return None
     gross = num(led.get("realized_gross"))
     net = num(_first(led.get("realized_net_est"), led.get("realized_net"), led.get("realized")))
-    rts = led.get("round_trips") or []
-    if gross is None and isinstance(rts, list) and rts:
-        g = 0.0
-        for rt in rts:
+    rts_raw = led.get("round_trips") or []
+    rts: list[dict] = []
+    if isinstance(rts_raw, list):
+        for rt in rts_raw:
             if isinstance(rt, dict):
                 n = _normalize_rt(rt)
-                if n and n.get("pnl") is not None:
-                    g += float(n["pnl"])
-        if rts:
-            gross = round(g, 2)
+                if n:
+                    rts.append(n)
+    if gross is None and rts:
+        gross = round(sum(float(r.get("pnl") or 0) for r in rts), 2)
+    if gross is None and net is None:
+        # Today's 김프로 ledger often has fills[] without realized_* / archive.
+        fills = _fills_from_ledger(led)
+        paired = _pair_fills_to_rts(fills) if fills else []
+        if paired:
+            rts = paired
+            gross = round(sum(float(r.get("pnl") or 0) for r in paired), 2)
     if gross is None and net is None:
         return None
     if net is None and gross is not None:
@@ -716,7 +735,7 @@ def _day_record_from_ledger(led: dict, *, source: str, day: date) -> Optional[di
         "realized_net_est": net,
         "fees_day_est": num(led.get("fees_day_est")),
         "tax_est": num(led.get("tax_est")),
-        "round_trip_count": len(rts) if isinstance(rts, list) else None,
+        "round_trip_count": len(rts) if rts else (len(rts_raw) if isinstance(rts_raw, list) else None),
         "eod": bool(led.get("eod") or led.get("session_ended")),
         "source": source,
         "gap": False,
@@ -724,7 +743,10 @@ def _day_record_from_ledger(led: dict, *, source: str, day: date) -> Optional[di
 
 
 def _cumulative_091170(root: Path, n_days: int = 3) -> Optional[dict]:
-    """Best-effort from ledger_archive / day_ledger. Omit if nothing found."""
+    """Archive days plus root day_ledger.json when its session_date matches.
+
+    Missing archive days stay gaps (available=False). Never invents history.
+    """
     try:
         from cumulative_pnl import last_n_trading_days
     except Exception:
