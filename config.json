@@ -80,7 +80,7 @@
     "capital_gains_tax_pct": 0.154,
     "note": "verify against actual KIS account fees"
   },
-  "updated_at": "2026-09-11T07:47:56+09:00",
+  "updated_at": "2026-09-14T09:11:17+09:00",
   "param_choice": {
     "spacing_pct": 0.002,
     "levels": 5,
@@ -91,6 +91,8 @@
     "notify_on_bootstrap_success": true,
     "notify_on_bootstrap_error": true,
     "notify_on_session_api_fail": true,
+    "notify_on_buy_fill": true,
+    "notify_on_sell_fill": true,
     "chat_id_note": "Set TELEGRAM_CHAT_ID env or box-secrets TELEGRAM_CHAT_ID (not committed)"
   },
   "cooldown": {

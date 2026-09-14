@@ -575,6 +575,7 @@ class GridEngine:
             # Place TP sell
             self.place_sell(pos.buy_price)
             self._persist()
+            self._notify_buy_fill(order, pos)
 
         elif order.side == Side.SELL:
             buy_px = order.linked_buy_price
@@ -599,6 +600,7 @@ class GridEngine:
                 {"order_id": order.order_id},
             )
             self._persist()
+            self._notify_sell_fill(order, removed)
             # Recycle: rebuy at original grid line (limit), fallback fill buy_price
             if removed is not None:
                 px = int(removed.grid_line or removed.buy_price)
@@ -610,6 +612,47 @@ class GridEngine:
                     self.place_buy(px, tag=f"recycle@{px}", recycle=True)
                 else:
                     self.place_buy(px, tag=f"recycle@{px}", recycle=True)
+
+
+    def _tg_notify(self, flag: str) -> bool:
+        return bool((self.cfg.get("telegram") or {}).get(flag))
+
+    def _notify_buy_fill(self, order: Order, pos: Position) -> None:
+        """Telegram on BUY fill after TP place attempt. Never raises."""
+        if not self._tg_notify("notify_on_buy_fill"):
+            return
+        buy = int(pos.buy_price)
+        qty = int(pos.qty)
+        spacing = int(self.grid.spacing) if self.grid is not None else None
+        lines = [
+            f"📥 {self.symbol} 매수 체결",
+            f"{qty}주 @{buy:,}",
+        ]
+        if spacing is not None:
+            tp = buy + spacing
+            lines.append(f"익절 지정 {qty}@{tp:,}")
+        lines.append(f"oid={order.order_id}")
+        self._alert("\n".join(lines))
+
+    def _notify_sell_fill(self, order: Order, removed: Optional[Position]) -> None:
+        """Telegram on SELL (TP) fill. Never raises."""
+        if not self._tg_notify("notify_on_sell_fill"):
+            return
+        sell = int(order.fill_price or order.price)
+        qty = int(order.fill_qty or order.qty)
+        buy = None
+        if removed is not None:
+            buy = int(removed.buy_price)
+        elif order.linked_buy_price is not None:
+            buy = int(order.linked_buy_price)
+        lines = [
+            f"📤 {self.symbol} 매도 체결(익절)",
+            f"{qty}주 @{sell:,}",
+        ]
+        if buy is not None:
+            pnl = (sell - buy) * qty
+            lines.append(f"매수 {buy:,} → 차익 +{pnl:,}")
+        self._alert("\n".join(lines))
 
     def _maybe_ratchet(self) -> None:
         rcfg = self.cfg.get("ratchet", {})

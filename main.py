@@ -425,25 +425,34 @@ def run_live_bootstrap(cfg: dict[str, Any], args: argparse.Namespace) -> int:
     return 0
 
 
+def _box_secret(key: str) -> str:
+    """Read key from box-secrets.json (secrets then card). Never print values."""
+    try:
+        data = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    for section in ("secrets", "card"):
+        bucket = data.get(section)
+        if isinstance(bucket, dict):
+            val = str(bucket.get(key) or "").strip()
+            if val:
+                return val
+    return str(data.get(key) or "").strip()
+
+
 def _load_telegram_creds(cfg: dict[str, Any] | None = None) -> tuple[str, str]:
     """Return (token, chat_id). Never log token. Prefer env, then box-secrets + config."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN") or ""
     chat = os.environ.get("TELEGRAM_CHAT_ID") or ""
     if not token:
-        try:
-            secrets = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8")).get("secrets") or {}
-            token = str(secrets.get("TELEGRAM_BOT_TOKEN") or "")
-        except Exception:  # noqa: BLE001
-            token = ""
+        token = _box_secret("TELEGRAM_BOT_TOKEN")
     if not chat:
         tg = (cfg or {}).get("telegram") or {}
-        chat = str(tg.get("chat_id") or os.environ.get("TELEGRAM_CHAT_ID") or "")
-        if not chat:
-            try:
-                secrets = json.loads(Path("/home/box/agent-data/box-secrets.json").read_text(encoding="utf-8")).get("secrets") or {}
-                chat = str(secrets.get("TELEGRAM_CHAT_ID") or "")
-            except Exception:
-                chat = ""
+        chat = str(tg.get("chat_id") or "")
+    if not chat:
+        chat = _box_secret("TELEGRAM_CHAT_ID")
     return token, chat
 
 

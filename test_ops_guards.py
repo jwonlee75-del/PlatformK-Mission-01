@@ -308,5 +308,50 @@ class TestSessionEndAndBootstrap(unittest.TestCase):
         self.assertEqual(len(buys), cfg["grid"]["levels"])
 
 
+
+
+class TestFillTelegramAlerts(unittest.TestCase):
+    def test_buy_and_sell_fill_alerts_korean(self):
+        cfg = _base_cfg()
+        cfg.setdefault("telegram", {})
+        cfg["telegram"]["notify_on_buy_fill"] = True
+        cfg["telegram"]["notify_on_sell_fill"] = True
+        ref = 25000
+        eng, broker, events, alerts = _engine(cfg, ref=ref, sma20=20000)
+        eng.on_session_start(ref, _t(9, 5))
+        spacing = eng.grid.spacing
+        buy1 = ref - spacing
+
+        eng.on_price(buy1, _t(10, 0))
+        buy_alerts = [a for a in alerts if "매수 체결" in a]
+        self.assertEqual(len(buy_alerts), 1, alerts)
+        self.assertIn(f"{eng.symbol} 매수 체결", buy_alerts[0])
+        self.assertIn(f"@{buy1:,}", buy_alerts[0])
+        self.assertIn(f"익절 지정 1@{buy1 + spacing:,}", buy_alerts[0])
+        self.assertIn("oid=", buy_alerts[0])
+
+        tp = buy1 + spacing
+        eng.on_price(tp, _t(10, 30, 0))
+        sell_alerts = [a for a in alerts if "매도 체결" in a]
+        self.assertEqual(len(sell_alerts), 1, alerts)
+        self.assertIn("매도 체결(익절)", sell_alerts[0])
+        self.assertIn(f"@{tp:,}", sell_alerts[0])
+        pnl = tp - buy1
+        self.assertIn(f"매수 {buy1:,} → 차익 +{pnl:,}", sell_alerts[0])
+
+    def test_fill_alerts_off_when_flags_false(self):
+        cfg = _base_cfg()
+        cfg.setdefault("telegram", {})
+        cfg["telegram"]["notify_on_buy_fill"] = False
+        cfg["telegram"]["notify_on_sell_fill"] = False
+        ref = 25000
+        eng, broker, events, alerts = _engine(cfg, ref=ref, sma20=20000)
+        eng.on_session_start(ref, _t(9, 5))
+        buy1 = ref - eng.grid.spacing
+        eng.on_price(buy1, _t(10, 0))
+        eng.on_price(buy1 + eng.grid.spacing, _t(10, 30, 0))
+        self.assertFalse(any("매수 체결" in a or "매도 체결" in a for a in alerts), alerts)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
