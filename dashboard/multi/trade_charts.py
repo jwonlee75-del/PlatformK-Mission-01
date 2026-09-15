@@ -5,6 +5,7 @@ For a Seoul trading date (today if weekday, else last weekday):
   - load that day's ledger fills per bot root
   - fetch or reuse cached 1m bars (KIS inquire-time-dailychartprice, read-only)
   - write PNG snapshots with BUY▲ / SELL▼ markers
+    (full day + 09:00–09:30 zoom when `_fills_clustered_morning`)
 
 Matplotlib is optional: if import fails, skip PNG generation.
 Never places orders. Never prints secrets/tokens.
@@ -47,9 +48,13 @@ TR_ID = "FHKST03010230"
 CHART_NAME_RE = re.compile(r"^[0-9]{6}_trades_1m(?:_am)?(?:_[0-9]{8})?\.png$")
 
 BOT_SPECS = (
-    {"id": "367380", "name": "ACE NASDAQ100", "zoom_morning": False},
-    {"id": "091170", "name": "KODEX Bank", "zoom_morning": True},
+    {"id": "367380", "name": "ACE NASDAQ100"},
+    {"id": "091170", "name": "KODEX Bank"},
 )
+
+# Shared 30-minute morning zoom (both bots).
+MORNING_ZOOM_FROM = "090000"
+MORNING_ZOOM_TO = "093000"
 
 _BUILD_LOCK = threading.Lock()
 _KIS_AUTHED = False
@@ -281,9 +286,20 @@ def count_sides(markers: list[dict]) -> tuple[int, int]:
     return buys, sells
 
 
-def has_morning_cluster(markers: list[dict], *, before: str = "103000", min_fills: int = 2) -> bool:
-    n = sum(1 for m in markers if str(m.get("tmd") or "") < before)
+def _fills_clustered_morning(
+    markers: list[dict],
+    *,
+    t_to: str = MORNING_ZOOM_TO,
+    min_fills: int = 2,
+) -> bool:
+    """True when enough fills land at or before 09:30 (pre-open 08:xx counts)."""
+    n = sum(1 for m in markers if str(m.get("tmd") or "") and str(m.get("tmd")) <= t_to)
     return n >= min_fills
+
+
+def has_morning_cluster(markers: list[dict], **kwargs) -> bool:
+    """Public alias for ``_fills_clustered_morning``."""
+    return _fills_clustered_morning(markers, **kwargs)
 
 
 def bars_cache_path(directory: Path, symbol: str, chart_date: date) -> Path:
@@ -449,6 +465,7 @@ def render_chart(
     title: str,
     time_from: Optional[str] = None,
     time_to: Optional[str] = None,
+    marker_time_from: Optional[str] = None,
 ) -> bool:
     """Write a dark OHLC PNG. Returns False if matplotlib is unavailable."""
     try:
@@ -464,11 +481,12 @@ def render_chart(
     if not view:
         return False
     marks = markers
-    if time_from or time_to:
+    m_from = time_from if marker_time_from is None else marker_time_from
+    if m_from or time_to:
         marks = [
             m
             for m in markers
-            if (not time_from or m["tmd"] >= time_from) and (not time_to or m["tmd"] <= time_to)
+            if (not m_from or m["tmd"] >= m_from) and (not time_to or m["tmd"] <= time_to)
         ]
 
     plt.rcParams["axes.unicode_minus"] = False
@@ -707,16 +725,17 @@ def build_snapshots(
                 pass
 
         zoom_url = None
-        if spec.get("zoom_morning") and has_morning_cluster(markers):
+        if _fills_clustered_morning(markers):
             zname = f"{sid}_trades_1m_am.png"
             zok = bool(
                 painter(
                     bars,
                     markers,
                     directory / zname,
-                    title=f"{spec['name']} {sid} · {target.isoformat()} 1m AM",
-                    time_from="090000",
-                    time_to="103000",
+                    title=f"{spec['name']} {sid} · {target.isoformat()} 1m 09:00-09:30",
+                    time_from=MORNING_ZOOM_FROM,
+                    time_to=MORNING_ZOOM_TO,
+                    marker_time_from="000000",
                 )
             )
             if zok:

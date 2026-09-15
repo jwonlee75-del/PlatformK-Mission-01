@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "dashboard"))
 sys.path.insert(0, str(MULTI))
 
 from trade_charts import (  # noqa: E402
+    _fills_clustered_morning,
     attach_charts,
     build_snapshots,
     extract_raw_fills,
@@ -170,8 +171,35 @@ class TestMarkerMapping(unittest.TestCase):
             {"tmd": "091200", "side": "BUY", "price": 1, "qty": 1},
             {"tmd": "120000", "side": "SELL", "price": 1, "qty": 1},
         ]
+        self.assertTrue(_fills_clustered_morning(clustered))
         self.assertTrue(has_morning_cluster(clustered))
-        self.assertFalse(has_morning_cluster([{"tmd": "120000", "side": "SELL", "price": 1, "qty": 1}]))
+        self.assertFalse(_fills_clustered_morning([{"tmd": "120000", "side": "SELL", "price": 1, "qty": 1}]))
+        # 09:00–09:30 window: 09:30 counts, 10:00 does not
+        self.assertTrue(
+            _fills_clustered_morning(
+                [
+                    {"tmd": "090000", "side": "BUY", "price": 1, "qty": 1},
+                    {"tmd": "093000", "side": "SELL", "price": 1, "qty": 1},
+                ]
+            )
+        )
+        self.assertFalse(
+            _fills_clustered_morning(
+                [
+                    {"tmd": "100000", "side": "BUY", "price": 1, "qty": 1},
+                    {"tmd": "103000", "side": "SELL", "price": 1, "qty": 1},
+                ]
+            )
+        )
+        # 367380 pre-open 08:xx cluster still counts as morning
+        self.assertTrue(
+            _fills_clustered_morning(
+                [
+                    {"tmd": "083729", "side": "BUY", "price": 1, "qty": 1},
+                    {"tmd": "083730", "side": "BUY", "price": 1, "qty": 1},
+                ]
+            )
+        )
 
 
 class TestSafeChartName(unittest.TestCase):
@@ -199,6 +227,7 @@ class TestBuildSnapshots(unittest.TestCase):
                     "meta": {
                         "today_fills": [
                             {"side": "BUY", "price": 10010, "qty": 1, "tmd": "090100", "odno": "A"},
+                            {"side": "BUY", "price": 10015, "qty": 1, "tmd": "090200", "odno": "A2"},
                             {"side": "SELL", "price": 10040, "qty": 1, "tmd": "103000", "odno": "B"},
                         ]
                     },
@@ -232,10 +261,12 @@ class TestBuildSnapshots(unittest.TestCase):
             s367 = idx["symbols"]["367380"]
             s091 = idx["symbols"]["091170"]
             self.assertTrue(s367["available"])
-            self.assertEqual(s367["buy_count"], 1)
+            self.assertEqual(s367["buy_count"], 2)
             self.assertEqual(s367["sell_count"], 1)
             self.assertEqual(s367["url"], "/charts/367380_trades_1m.png")
+            self.assertEqual(s367["zoom_url"], "/charts/367380_trades_1m_am.png")
             self.assertTrue((cache / "367380_trades_1m.png").is_file())
+            self.assertTrue((cache / "367380_trades_1m_am.png").is_file())
             self.assertTrue(s091["available"])
             self.assertEqual(s091["buy_count"], 2)
             self.assertEqual(s091["sell_count"], 1)
@@ -247,8 +278,37 @@ class TestBuildSnapshots(unittest.TestCase):
 
             payload = {"bots": [{"id": "367380"}, {"id": "091170"}]}
             attach_charts(payload, cache)
-            self.assertEqual(payload["bots"][0]["chart"]["buy_count"], 1)
+            self.assertEqual(payload["bots"][0]["chart"]["buy_count"], 2)
+            self.assertEqual(payload["bots"][0]["chart"]["zoom_url"], "/charts/367380_trades_1m_am.png")
             self.assertTrue(payload["charts"]["ok"])
+
+    def test_afternoon_only_skips_morning_zoom(self):
+        chart_day = date(2026, 9, 14)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "bot"
+            cache = Path(td) / "charts"
+            _write(
+                root / "day_ledger.json",
+                {
+                    "date": "2026-09-14",
+                    "meta": {
+                        "today_fills": [
+                            {"side": "BUY", "price": 10040, "qty": 1, "tmd": "120000", "odno": "A"},
+                            {"side": "SELL", "price": 10005, "qty": 1, "tmd": "150000", "odno": "B"},
+                        ]
+                    },
+                },
+            )
+            idx = build_snapshots(
+                chart_date=chart_day,
+                charts_dir_path=cache,
+                roots={"367380": root, "091170": root},
+                fetch_bars=lambda _s, _d: list(FIXTURE_BARS),
+                skip_kis=True,
+                render_fn=_fake_render,
+            )
+            self.assertIsNone(idx["symbols"]["367380"]["zoom_url"])
+            self.assertFalse((cache / "367380_trades_1m_am.png").exists())
 
     def test_skip_kis_without_cache_is_empty(self):
         with tempfile.TemporaryDirectory() as td:

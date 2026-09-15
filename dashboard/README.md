@@ -76,7 +76,8 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 봇 패널마다 서울 거래일(평일이면 오늘, 주말이면 직전 평일) 1분 OHLC와 그날 원장 체결 마커를 그립니다.
 
 - 367380: `day_ledger.json` / `ledger_archive` 의 `meta.today_fills` (`tmd` HHMMSS)
-- 091170: `day_ledger.json` `fills[]` (ISO `ts` 또는 `tmd`). 아침 체결이 몰리면 전체 + 오전 확대
+- 091170: `day_ledger.json` `fills[]` (ISO `ts` 또는 `tmd`)
+- 아침 체결이 몰리면(`_fills_clustered_morning`) 두 봇 모두 전체 + **09:00–09:30** 확대 PNG
 - 분봉: KIS `inquire-time-dailychartprice` TR `FHKST03010230` **조회만**. 주문 API 없음
 - 캐시: `DASHBOARD_CHARTS_DIR` (기본 `{367380 root}/logs/charts/`). PNG·분봉 JSON은 커밋하지 않음
 - TTL: `DASHBOARD_CHART_TTL_SEC` (기본 600). 15초 UI 갱신은 `/api/portfolio`만 치고 차트는 디스크 인덱스를 읽음
