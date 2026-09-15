@@ -8,6 +8,10 @@ LIVE_APPROVED
 
 # runtime state & logs
 logs/
+# runtime 1m chart snapshots / bar cache (never commit PNGs)
+logs/charts/
+dashboard/multi/chart_cache/
+**/*_trades_1m*.png
 orders_state.json
 orders_state.json.bak*
 positions.json
