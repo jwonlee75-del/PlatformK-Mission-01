@@ -546,15 +546,17 @@ function chartBlock(b) {
   const fillCap = noFills ? "체결 없음" : `BUY ▲ ${fmtNum(buys)} / SELL ▼ ${fmtNum(sells)}`;
   if (ch.available && ch.url) {
     const bust = encodeURIComponent(ch.generated_at || date || "");
+    const zw = ch.zoom_window || {};
+    const zoomLabel = (zw.start && zw.end) ? `확대 ${zw.start}–${zw.end}` : "";
     const zoom = ch.zoom_url
-      ? `<img class="chart-img" src="${esc(ch.zoom_url)}?t=${bust}" alt="${esc(b.id)} morning 1m trades">`
+      ? `<img class="chart-img" src="${esc(ch.zoom_url)}?t=${bust}" alt="${esc(b.id)} ${esc(zoomLabel || "30m zoom")}">`
       : "";
     return `<section class="panel chart-panel" style="box-shadow:none">
-      <h2>당일 1분 차트 <span class="meta">${esc(date)} · ${fillMeta}</span></h2>
+      <h2>당일 1분 차트 <span class="meta">${esc(date)} · ${fillMeta}${zoomLabel ? " · " + esc(zoomLabel) : ""}</span></h2>
       <figure class="chart-snap">
         <img class="chart-img" src="${esc(ch.url)}?t=${bust}" alt="${esc(b.id)} 1m BUY/SELL">
         ${zoom}
-        <figcaption>${esc(date)} · ${fillCap}</figcaption>
+        <figcaption>${esc(date)} · ${fillCap}${zoomLabel ? " · " + esc(zoomLabel) : ""}</figcaption>
       </figure>
     </section>`;
   }

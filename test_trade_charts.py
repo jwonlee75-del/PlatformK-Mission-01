@@ -31,6 +31,9 @@ from trade_charts import (  # noqa: E402
     read_chart_index,
     safe_chart_name,
     seoul_chart_date,
+    should_render_zoom,
+    zoom_title,
+    zoom_window_from_bars,
 )
 
 
@@ -203,6 +206,39 @@ class TestMarkerMapping(unittest.TestCase):
         )
 
 
+class TestSlidingZoomWindow(unittest.TestCase):
+    def _bars(self, last: str) -> list[dict]:
+        return [
+            {"time": "090000", "open": 1, "high": 1, "low": 1, "close": 1},
+            {"time": last, "open": 1, "high": 1, "low": 1, "close": 1},
+        ]
+
+    def test_aligns_to_half_hour_from_last_bar(self):
+        w = zoom_window_from_bars(self._bars("091700"))
+        self.assertEqual((w["start"], w["end"]), ("09:00", "09:30"))
+        w = zoom_window_from_bars(self._bars("093000"))
+        self.assertEqual((w["start"], w["end"]), ("09:30", "10:00"))
+        w = zoom_window_from_bars(self._bars("100500"))
+        self.assertEqual((w["start"], w["end"]), ("10:00", "10:30"))
+        w = zoom_window_from_bars(self._bars("152000"))
+        self.assertEqual((w["start"], w["end"]), ("15:00", "15:30"))
+
+    def test_clamps_to_session(self):
+        w = zoom_window_from_bars(self._bars("083700"))
+        self.assertEqual((w["start"], w["end"]), ("09:00", "09:30"))
+        w = zoom_window_from_bars(self._bars("153000"))
+        self.assertEqual((w["start"], w["end"]), ("15:00", "15:30"))
+        w = zoom_window_from_bars(self._bars("154500"))
+        self.assertEqual((w["start"], w["end"]), ("15:00", "15:30"))
+
+    def test_title_and_always_when_bars_exist(self):
+        w = zoom_window_from_bars(self._bars("111200"))
+        self.assertEqual(zoom_title(w), "확대 11:00–11:30")
+        self.assertTrue(should_render_zoom(self._bars("111200")))
+        self.assertFalse(should_render_zoom([]))
+        self.assertIsNone(zoom_window_from_bars([]))
+
+
 class TestSafeChartName(unittest.TestCase):
     def test_whitelist(self):
         self.assertEqual(safe_chart_name("367380_trades_1m.png"), "367380_trades_1m.png")
@@ -266,12 +302,16 @@ class TestBuildSnapshots(unittest.TestCase):
             self.assertEqual(s367["sell_count"], 1)
             self.assertEqual(s367["url"], "/charts/367380_trades_1m.png")
             self.assertEqual(s367["zoom_url"], "/charts/367380_trades_1m_am.png")
+            self.assertEqual(s367["zoom_window"]["start"], "15:00")
+            self.assertEqual(s367["zoom_window"]["end"], "15:30")
             self.assertTrue((cache / "367380_trades_1m.png").is_file())
             self.assertTrue((cache / "367380_trades_1m_am.png").is_file())
             self.assertTrue(s091["available"])
             self.assertEqual(s091["buy_count"], 2)
             self.assertEqual(s091["sell_count"], 1)
             self.assertEqual(s091["zoom_url"], "/charts/091170_trades_1m_am.png")
+            self.assertEqual(s091["zoom_window"]["start"], "15:00")
+            self.assertEqual(s091["zoom_window"]["end"], "15:30")
             self.assertTrue((cache / "091170_trades_1m_am.png").is_file())
 
             disk = read_chart_index(cache)
@@ -283,7 +323,7 @@ class TestBuildSnapshots(unittest.TestCase):
             self.assertEqual(payload["bots"][0]["chart"]["zoom_url"], "/charts/367380_trades_1m_am.png")
             self.assertTrue(payload["charts"]["ok"])
 
-    def test_afternoon_only_skips_morning_zoom(self):
+    def test_afternoon_zoom_follows_last_bar(self):
         chart_day = date(2026, 9, 14)
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "bot"
@@ -308,8 +348,11 @@ class TestBuildSnapshots(unittest.TestCase):
                 skip_kis=True,
                 render_fn=_fake_render,
             )
-            self.assertIsNone(idx["symbols"]["367380"]["zoom_url"])
-            self.assertFalse((cache / "367380_trades_1m_am.png").exists())
+            z = idx["symbols"]["367380"]
+            self.assertEqual(z["zoom_url"], "/charts/367380_trades_1m_am.png")
+            self.assertEqual(z["zoom_window"]["start"], "15:00")
+            self.assertEqual(z["zoom_window"]["end"], "15:30")
+            self.assertTrue((cache / "367380_trades_1m_am.png").is_file())
 
     def test_skip_kis_without_cache_is_empty(self):
         with tempfile.TemporaryDirectory() as td:
@@ -434,7 +477,9 @@ class TestBuildSnapshots(unittest.TestCase):
             self.assertEqual(s["sell_count"], 0)
             self.assertTrue(s["no_fills"])
             self.assertEqual(s["url"], "/charts/367380_trades_1m.png")
-            self.assertIsNone(s["zoom_url"])
+            self.assertEqual(s["zoom_url"], "/charts/367380_trades_1m_am.png")
+            self.assertEqual(s["zoom_window"]["start"], "15:00")
+            self.assertEqual(s["zoom_window"]["end"], "15:30")
             self.assertTrue((cache / "367380_trades_1m.png").is_file())
             self.assertTrue((cache / "367380_trades_1m_20260915.png").is_file())
             self.assertEqual(fetched_dates, [today, today])

@@ -77,7 +77,7 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 
 - 367380: `day_ledger.json` / `ledger_archive` 의 `meta.today_fills` (`tmd` HHMMSS)
 - 091170: `day_ledger.json` `fills[]` (ISO `ts` 또는 `tmd`)
-- 아침 체결이 몰리면(`_fills_clustered_morning`) 두 봇 모두 전체 + **09:00–09:30** 확대 PNG
+- 장중(분봉이 있으면) 두 봇 모두 전체 + **슬라이딩 30분 확대** (`:00`/`:30` 정렬, 09:00–15:30). 제목 `확대 HH:MM–HH:MM`
 - 분봉: KIS `inquire-time-dailychartprice` TR `FHKST03010230` **조회만**. 주문 API 없음
 - 캐시: `DASHBOARD_CHARTS_DIR` (기본 `{367380 root}/logs/charts/`). PNG·분봉 JSON은 커밋하지 않음
 - 라이브 PNG(`/charts/<symbol>_trades_1m.png`)는 **항상 서울 당일 세션**. 오늘 체결이 없어도 당일 1분봉을 그리고 마커만 비움(전일 원장으로 떨어지지 않음)

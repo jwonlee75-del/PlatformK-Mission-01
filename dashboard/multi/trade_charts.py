@@ -5,7 +5,7 @@ For a Seoul trading date (today if weekday, else last weekday):
   - load that day's ledger fills per bot root
   - fetch or reuse cached 1m bars (KIS inquire-time-dailychartprice, read-only)
   - write PNG snapshots with BUY▲ / SELL▼ markers
-    (full day + 09:00–09:30 zoom when `_fills_clustered_morning`)
+    (full day + sliding 30-min zoom aligned to :00/:30 from the last bar)
 
 Matplotlib is optional: if import fails, skip PNG generation.
 Never places orders. Never prints secrets/tokens.
@@ -53,7 +53,10 @@ BOT_SPECS = (
     {"id": "091170", "name": "KODEX Bank"},
 )
 
-# Shared 30-minute morning zoom (both bots).
+SESSION_START_TMD = "090000"
+SESSION_END_TMD = "153000"
+ZOOM_MINUTES = 30
+# Kept for fill-cluster helpers / tests (not the live zoom window).
 MORNING_ZOOM_FROM = "090000"
 MORNING_ZOOM_TO = "093000"
 
@@ -469,6 +472,67 @@ def _tmd_minutes(tmd: str) -> float:
     return int(t[0:2]) * 60 + int(t[2:4]) + int(t[4:6]) / 60.0
 
 
+def _hhmm_from_minutes(mins: int) -> str:
+    mins = max(0, min(int(mins), 23 * 60 + 59))
+    return f"{mins // 60:02d}:{mins % 60:02d}"
+
+
+def _tmd_from_minutes(mins: int) -> str:
+    mins = max(0, min(int(mins), 23 * 60 + 59))
+    return f"{mins // 60:02d}{mins % 60:02d}00"
+
+
+def last_bar_tmd(bars: list[dict]) -> Optional[str]:
+    times = [str(b.get("time") or "") for b in bars if b.get("time")]
+    return max(times) if times else None
+
+
+def zoom_window_from_bars(
+    bars: list[dict],
+    *,
+    session_start: str = SESSION_START_TMD,
+    session_end: str = SESSION_END_TMD,
+    width_min: int = ZOOM_MINUTES,
+) -> Optional[dict]:
+    """30-minute screen window aligned to :00/:30 from the last bar.
+
+    Clamped to the cash session (default 09:00–15:30).
+    """
+    last = last_bar_tmd(bars)
+    if not last:
+        return None
+    last_min = int(_tmd_minutes(last))
+    start_lim = int(_tmd_minutes(session_start))
+    end_lim = int(_tmd_minutes(session_end))
+    if end_lim - start_lim < width_min:
+        return None
+    aligned = (last_min // width_min) * width_min
+    if aligned + width_min > end_lim:
+        aligned = end_lim - width_min
+    if aligned < start_lim:
+        aligned = start_lim
+    end = aligned + width_min
+    if end > end_lim:
+        end = end_lim
+        aligned = end - width_min
+    return {
+        "start": _hhmm_from_minutes(aligned),
+        "end": _hhmm_from_minutes(end),
+        "start_tmd": _tmd_from_minutes(aligned),
+        "end_tmd": _tmd_from_minutes(end),
+    }
+
+
+def zoom_title(window: dict) -> str:
+    return f"확대 {window['start']}–{window['end']}"
+
+
+def should_render_zoom(bars: list[dict], *, now: Optional[datetime] = None) -> bool:
+    """Show the sliding zoom when bars exist (always during a live session)."""
+    _ = now  # reserved: live session is the preferred time to refresh this panel
+    return bool(bars) and zoom_window_from_bars(bars) is not None
+
+
 def marker_x_on_bars(tmd: str, bars: list[dict]) -> float:
     """Map HHMMSS onto bar index (nearest / clamped)."""
     times = [str(b.get("time") or "") for b in bars]
@@ -517,6 +581,15 @@ def render_chart(
         from matplotlib.patches import Rectangle
     except Exception:  # noqa: BLE001
         return False
+
+    from matplotlib import font_manager
+
+    installed = {f.name for f in font_manager.fontManager.ttflist}
+    for fam in ("WenQuanYi Micro Hei", "Noto Sans CJK KR", "Noto Sans KR", "DejaVu Sans"):
+        if fam in installed:
+            plt.rcParams["font.family"] = fam
+            break
+    plt.rcParams["axes.unicode_minus"] = False
 
     view = _filter_bars(bars, time_from, time_to)
     if not view:
@@ -611,6 +684,7 @@ def empty_symbol_entry(symbol: str, chart_date: date, reason: str) -> dict:
         "date": chart_date.isoformat(),
         "url": None,
         "zoom_url": None,
+        "zoom_window": None,
         "generated_at": None,
         "buy_count": 0,
         "sell_count": 0,
@@ -777,21 +851,25 @@ def build_snapshots(
                 pass
 
         zoom_url = None
-        if _fills_clustered_morning(markers):
+        zoom_window = zoom_window_from_bars(bars) if should_render_zoom(bars) else None
+        if zoom_window:
             zname = f"{sid}_trades_1m_am.png"
+            marker_from = "000000" if zoom_window["start_tmd"] == SESSION_START_TMD else zoom_window["start_tmd"]
             zok = bool(
                 painter(
                     bars,
                     markers,
                     directory / zname,
-                    title=f"{spec['name']} {sid} · {target.isoformat()} 1m 09:00-09:30",
-                    time_from=MORNING_ZOOM_FROM,
-                    time_to=MORNING_ZOOM_TO,
-                    marker_time_from="000000",
+                    title=f"{spec['name']} {sid} · {zoom_title(zoom_window)}",
+                    time_from=zoom_window["start_tmd"],
+                    time_to=zoom_window["end_tmd"],
+                    marker_time_from=marker_from,
                 )
             )
             if zok:
                 zoom_url = f"/charts/{zname}"
+            else:
+                zoom_window = None
 
         if not ok:
             entry = empty_symbol_entry(sid, target, "render_failed")
@@ -809,6 +887,7 @@ def build_snapshots(
             "date": target.isoformat(),
             "url": f"/charts/{fname}",
             "zoom_url": zoom_url,
+            "zoom_window": zoom_window,
             "generated_at": generated_at,
             "buy_count": buys,
             "sell_count": sells,
