@@ -22,7 +22,7 @@ Read-only. No secrets. Explicit `round_trips` only — no FIFO and no fill pairi
 
 ## Payload
 
-`bots[].pnl.win_rate` and `hero.win_rate`. Hero **sums** wins/losses across ok bots, then recomputes the rate (`source: hero_sum`).
+`bots[].pnl.win_rate` and `hero.win_rate`. Hero **sums** wins/losses across ok bots, then recomputes the rate (`source: hero_sum`). Hero `days` is the sum of per-bot ledger-day counts, not unique calendar days.
 
 ```json
 {
