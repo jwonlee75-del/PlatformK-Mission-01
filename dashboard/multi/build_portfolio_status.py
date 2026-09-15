@@ -29,6 +29,7 @@ from common import (  # noqa: E402
     redact,
     resolve_bot_root,
 )
+from win_rate import combine_win_rates, compute_win_rate  # noqa: E402
 
 # Per-symbol quote cache so 15s refresh does not hammer KIS.
 _KIS_CACHE: dict[str, dict[str, Any]] = {}
@@ -96,6 +97,7 @@ def _normalize_367380(status: dict, *, root: Path) -> dict:
     ov["safety_frozen"] = frozen
     ov["safety_reasons"] = reasons
     pnl = dict(status.get("pnl") or {})
+    pnl["win_rate"] = compute_win_rate(root)
     return redact(
         {
             "id": "367380",
@@ -318,6 +320,7 @@ def build_portfolio_status(*, try_kis: bool = True) -> dict:
                 "bots_ok": len(ok_bots),
                 "bots_total": len(bots),
                 "cumulative_3d": _combine_cumulative(bots),
+                "win_rate": combine_win_rates(bots),
             },
             "kis": {
                 "ok": kis_any_ok,

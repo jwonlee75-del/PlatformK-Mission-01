@@ -69,6 +69,8 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 | `multi/build_portfolio_status.py` | 두 봇을 공통 스키마로 정규화·합산 |
 | `multi/adapter_091170.py` | 슬롯/`plan.json`/`day_ledger` fills·base 매핑 |
 | `multi/trade_charts.py` | 당일 원장 체결 + 1분봉 스냅샷 (BUY▲/SELL▼) |
+| `multi/win_rate.py` | 원장 `round_trips` 누적 승률 (승=`pnl_gross>0`) |
+| `multi/FIELD_GUIDE.md` | 승률 필드 정의 |
 | `multi/portfolio.html` | 모바일 퍼스트 다크 UI, ~15초 자동 갱신 |
 
 ### 당일 1분 차트 스냅샷
@@ -84,6 +86,8 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 - TTL: 장중 90초 / 장외 600초 (`DASHBOARD_CHART_TTL_SEC`로 덮어쓰기). 15초 UI 갱신은 `/api/portfolio`만 치고 차트는 디스크 인덱스를 읽음. 인덱스의 날짜가 당일이 아니면 stale
 - 강제 재생성: `GET /api/charts?refresh=1`
 - `matplotlib` 은 선택 의존성입니다. 없으면 차트만 생략하고 나머지는 그대로입니다 (`pip install matplotlib`)
+
+**누적 승률:** 히어로와 봇 카드에 `wins/(wins+losses)` 를 표시합니다. 승은 `round_trips[].pnl_gross>0`, 패는 `<0`, 본전(0)은 분모에서 빼며, `ledger_archive` 전 일자 + 당일 원장만 봅니다(명시적 RT만, FIFO 없음). 필드는 `dashboard/multi/FIELD_GUIDE.md`.
 
 091170은 저장소 밖 런타임 경로(`/workspace/grid-bot-091170`)입니다. 없으면 API는 **봇별 에러**를 넣고 367380은 계속 표시합니다.
 

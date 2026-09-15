@@ -35,6 +35,7 @@ from common import (
     read_json,
     redact,
 )
+from win_rate import compute_win_rate
 
 BOT_ID = "091170"
 SYMBOL_NAME = "KODEX 은행"
@@ -985,6 +986,7 @@ def _build_091170(*, root: Path, try_kis: bool, kis_quote: Optional[dict]) -> di
         "return_pct": live_return_pct,
         "cumulative_3d": cum,
         "ops_summary_text": pnl.get("ops_summary_text"),
+        "win_rate": compute_win_rate(root),
     }
 
     plan_summary = {

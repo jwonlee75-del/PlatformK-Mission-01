@@ -206,6 +206,7 @@
       <h2>합산 성과 <span class="meta" id="heroMeta">포트폴리오</span></h2>
       <div class="pnl-pair" id="heroPnlPair"></div>
       <div class="pnl-pair" id="heroGrossPair" style="padding-top:0;"></div>
+      <div class="pnl-pair" id="heroWinPair" style="padding-top:0;"></div>
       <div class="day-strip" id="heroDayStrip"></div>
       <div class="hero-pnl" id="heroPnl" style="padding:12px;"></div>
     </section>
@@ -264,6 +265,37 @@ function setBadge(el, state, label) {
 function card(label, value, cls, hint) {
   return `<div class="card"><div class="label">${esc(label)}</div><div class="value ${cls || ""}">${esc(value)}</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ""}</div>`;
 }
+function winRateView(wr) {
+  const emptyWhy = {
+    bot_unavailable: "봇 없음",
+    root_missing: "경로 없음",
+    no_ledgers: "원장 없음",
+    no_round_trips: "라운드트립 없음",
+    no_decided_round_trips: "결정 RT 없음",
+  };
+  if (!wr || wr.win_rate_pct == null) {
+    const why = wr && wr.empty_reason ? String(wr.empty_reason) : "no_round_trips";
+    return {
+      text: "—",
+      cls: "",
+      hint: emptyWhy[why] || "결정 RT 없음",
+      wl: `${fmtNum(wr && wr.wins)} / ${fmtNum(wr && wr.losses)}`,
+      sub: "승/(승+패) · 원장 전일+당일",
+    };
+  }
+  const pct = Number(wr.win_rate_pct);
+  const cls = pct > 50 ? "pos" : (pct < 50 ? "neg" : "");
+  const even = wr.breakeven ? ` · 본전 ${fmtNum(wr.breakeven)}` : "";
+  const days = wr.days ? ` · ${fmtNum(wr.days)}일` : "";
+  const bots = (wr.bots && wr.bots.length) ? ` · ${wr.bots.join(" + ")}` : "";
+  return {
+    text: pct.toFixed(1) + "%",
+    cls,
+    hint: `승/(승+패)${days}${bots}`,
+    wl: `${fmtNum(wr.wins)} / ${fmtNum(wr.losses)}`,
+    sub: `라운드트립 ${fmtNum(wr.round_trips)}${even}`,
+  };
+}
 
 function liveLabel(la, id) {
   if (la && la.valid_today) return ["ok", `${id} LIVE · 오늘`];
@@ -318,6 +350,12 @@ function renderHero(d) {
     heroGrossPair.style.display = "none";
     heroGrossPair.innerHTML = "";
   }
+
+  const wr = winRateView(h.win_rate);
+  heroWinPair.innerHTML = [
+    card("누적 승률", wr.text, wr.cls, wr.hint),
+    card("승 / 패", wr.wl, wr.cls, wr.sub),
+  ].join("");
 
   const strip = dayStripHtml(cum && cum.per_day);
   heroDayStrip.innerHTML = strip || `<span class="day-chip na">일자별 누적 없음</span>`;
@@ -457,6 +495,7 @@ function renderBot(b) {
   const sellCnt = pnl.sell_fill_count;
   const files = (b.files_present || []).join(", ");
   const nDays = cum?.n_days || 3;
+  const wrBot = winRateView(pnl.win_rate);
   const cumNet = cum && cum.realized_net_est != null ? cum.realized_net_est : null;
   const cumGross = cum && cum.realized_gross != null ? cum.realized_gross : null;
   const pairHtml = `<div class="pnl-pair">
@@ -489,6 +528,7 @@ function renderBot(b) {
       ${card("미체결/플랜", `${orders.length}건`, "", b.plan && b.plan.present ? "plan.json" : "")}
       ${card("포지션", `${b.positions_meta?.count ?? pos.length}건 · ${b.positions_meta?.total_qty ?? 0}주`, "", "")}
       ${card("라이브 수익률", pnl.live_return_pct != null ? fmtPct(pnl.live_return_pct, 4) : "—", clsPnL(pnl.live_return_pct), "")}
+      ${card("누적 승률", wrBot.text, wrBot.cls, wrBot.wl + " · " + wrBot.hint)}
       ${ov.base != null ? card("베이스", fmtNum(ov.base), "", "세션 base") : ""}
     </div>
     <div class="config-row">
