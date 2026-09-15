@@ -80,7 +80,8 @@ GRID_BOT_091170_ROOT=/path/to/grid-bot-091170 /workspace/grid-bot/dashboard-port
 - 아침 체결이 몰리면(`_fills_clustered_morning`) 두 봇 모두 전체 + **09:00–09:30** 확대 PNG
 - 분봉: KIS `inquire-time-dailychartprice` TR `FHKST03010230` **조회만**. 주문 API 없음
 - 캐시: `DASHBOARD_CHARTS_DIR` (기본 `{367380 root}/logs/charts/`). PNG·분봉 JSON은 커밋하지 않음
-- TTL: `DASHBOARD_CHART_TTL_SEC` (기본 600). 15초 UI 갱신은 `/api/portfolio`만 치고 차트는 디스크 인덱스를 읽음
+- 라이브 PNG(`/charts/<symbol>_trades_1m.png`)는 **항상 서울 당일 세션**. 오늘 체결이 없어도 당일 1분봉을 그리고 마커만 비움(전일 원장으로 떨어지지 않음)
+- TTL: 장중 90초 / 장외 600초 (`DASHBOARD_CHART_TTL_SEC`로 덮어쓰기). 15초 UI 갱신은 `/api/portfolio`만 치고 차트는 디스크 인덱스를 읽음. 인덱스의 날짜가 당일이 아니면 stale
 - 강제 재생성: `GET /api/charts?refresh=1`
 - `matplotlib` 은 선택 의존성입니다. 없으면 차트만 생략하고 나머지는 그대로입니다 (`pip install matplotlib`)
 

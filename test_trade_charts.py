@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -18,6 +18,7 @@ from trade_charts import (  # noqa: E402
     _fills_clustered_morning,
     attach_charts,
     build_snapshots,
+    chart_ttl_sec,
     extract_raw_fills,
     fills_to_markers,
     get_or_build_charts,
@@ -277,7 +278,7 @@ class TestBuildSnapshots(unittest.TestCase):
             self.assertTrue(disk["symbols"]["367380"]["available"])
 
             payload = {"bots": [{"id": "367380"}, {"id": "091170"}]}
-            attach_charts(payload, cache)
+            attach_charts(payload, cache, live_date=chart_day)
             self.assertEqual(payload["bots"][0]["chart"]["buy_count"], 2)
             self.assertEqual(payload["bots"][0]["chart"]["zoom_url"], "/charts/367380_trades_1m_am.png")
             self.assertTrue(payload["charts"]["ok"])
@@ -375,6 +376,122 @@ class TestBuildSnapshots(unittest.TestCase):
             os.environ.pop("GRID_BOT_091170_ROOT", None)
         self.assertIn("bots", port)
         self.assertNotIn("charts", port)
+
+    def test_empty_today_fills_stays_on_today_not_yesterday(self):
+        """Live snapshot date is today even when today_fills is empty and yesterday has fills."""
+        today = date(2026, 9, 15)
+        yesterday = date(2026, 9, 14)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "g367"
+            cache = Path(td) / "charts"
+            _write(
+                root / "day_ledger.json",
+                {
+                    "date": "2026-09-14",
+                    "meta": {
+                        "today_fills": [
+                            {"side": "BUY", "price": 29875, "qty": 1, "tmd": "090612", "odno": "Y1"},
+                            {"side": "SELL", "price": 29920, "qty": 1, "tmd": "120000", "odno": "Y2"},
+                        ]
+                    },
+                },
+            )
+            _write(
+                root / "ledger_archive" / "day_ledger-20260914.json",
+                {
+                    "date": "2026-09-14",
+                    "meta": {
+                        "today_fills": [
+                            {"side": "BUY", "price": 29875, "qty": 1, "tmd": "090612", "odno": "Y1"},
+                        ]
+                    },
+                },
+            )
+            # Today ledger exists but fills are empty — must not inherit yesterday.
+            _write(
+                root / "day_ledger.json",
+                {"date": "2026-09-15", "meta": {"today_fills": []}, "fills": []},
+            )
+            fetched_dates = []
+
+            def fetch(_symbol, d):
+                fetched_dates.append(d)
+                return list(FIXTURE_BARS)
+
+            idx = build_snapshots(
+                chart_date=today,
+                charts_dir_path=cache,
+                roots={"367380": root, "091170": root},
+                fetch_bars=fetch,
+                skip_kis=True,
+                render_fn=_fake_render,
+            )
+            s = idx["symbols"]["367380"]
+            self.assertEqual(idx["date"], "2026-09-15")
+            self.assertEqual(s["date"], "2026-09-15")
+            self.assertTrue(s["available"])
+            self.assertEqual(s["buy_count"], 0)
+            self.assertEqual(s["sell_count"], 0)
+            self.assertTrue(s["no_fills"])
+            self.assertEqual(s["url"], "/charts/367380_trades_1m.png")
+            self.assertIsNone(s["zoom_url"])
+            self.assertTrue((cache / "367380_trades_1m.png").is_file())
+            self.assertTrue((cache / "367380_trades_1m_20260915.png").is_file())
+            self.assertEqual(fetched_dates, [today, today])
+            self.assertEqual(load_fills_for_bot(root, today), [])
+            y_fills = load_fills_for_bot(root, yesterday)
+            self.assertGreaterEqual(len(y_fills), 1)
+
+    def test_yesterday_index_is_not_advertised_as_live(self):
+        today = date(2026, 9, 15)
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "charts"
+            cache.mkdir(parents=True)
+            (cache / "index.json").write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "date": "2026-09-14",
+                        "generated_at": "2026-09-15T09:00:00+09:00",
+                        "ttl_sec": 600,
+                        "symbols": {
+                            "367380": {
+                                "available": True,
+                                "date": "2026-09-14",
+                                "url": "/charts/367380_trades_1m.png",
+                                "buy_count": 4,
+                                "sell_count": 2,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            disk = read_chart_index(cache, live_date=today)
+            self.assertTrue(disk["stale"])
+            payload = {"bots": [{"id": "367380"}]}
+            attach_charts(payload, cache, live_date=today)
+            self.assertEqual(payload["charts"]["date"], "2026-09-15")
+            self.assertFalse(payload["bots"][0]["chart"]["available"])
+            self.assertEqual(payload["bots"][0]["chart"]["empty_reason"], "stale_previous_session")
+
+    def test_ttl_shorter_during_session(self):
+        seoul = timezone(timedelta(hours=9))
+        old = os.environ.pop("DASHBOARD_CHART_TTL_SEC", None)
+        try:
+            morning = datetime(2026, 9, 15, 9, 15, tzinfo=seoul)
+            evening = datetime(2026, 9, 15, 18, 0, tzinfo=seoul)
+            sunday = datetime(2026, 9, 13, 10, 0, tzinfo=seoul)
+            self.assertEqual(chart_ttl_sec(now=morning), 90)
+            self.assertEqual(chart_ttl_sec(now=evening), 600)
+            self.assertEqual(chart_ttl_sec(now=sunday), 600)
+            os.environ["DASHBOARD_CHART_TTL_SEC"] = "120"
+            self.assertEqual(chart_ttl_sec(now=morning), 120)
+        finally:
+            if old is None:
+                os.environ.pop("DASHBOARD_CHART_TTL_SEC", None)
+            else:
+                os.environ["DASHBOARD_CHART_TTL_SEC"] = old
 
 
 if __name__ == "__main__":

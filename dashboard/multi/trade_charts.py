@@ -18,7 +18,7 @@ import re
 import sys
 import threading
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -41,7 +41,8 @@ from common import (  # noqa: E402
 from cumulative_pnl import last_n_trading_days  # noqa: E402
 
 SEOUL = timezone(timedelta(hours=9))
-TTL_DEFAULT = 600  # 10 minutes
+TTL_SESSION_SEC = 90  # near-realtime while the market is open
+TTL_OFFHOURS_SEC = 600
 API_URL = "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice"
 TR_ID = "FHKST03010230"
 
@@ -64,8 +65,24 @@ RenderFn = Callable[..., bool]
 
 
 def seoul_chart_date(as_of: Optional[date] = None) -> date:
-    """Today if a Seoul weekday, otherwise the previous weekday."""
+    """Live snapshot session: Seoul today if a weekday, else the previous weekday.
+
+    Never walks back to the last day that had fills.
+    """
     return last_n_trading_days(1, as_of=as_of)[-1]
+
+
+def in_chart_session(now: Optional[datetime] = None) -> bool:
+    """Seoul cash-session window used for snapshot TTL (09:00–15:30 weekdays)."""
+    dt = now or now_seoul()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=SEOUL)
+    else:
+        dt = dt.astimezone(SEOUL)
+    if dt.weekday() >= 5:
+        return False
+    t = dt.time()
+    return dtime(9, 0) <= t <= dtime(15, 30)
 
 
 def charts_dir(explicit: Optional[Path] = None) -> Path:
@@ -80,12 +97,14 @@ def charts_dir(explicit: Optional[Path] = None) -> Path:
     return path
 
 
-def chart_ttl_sec() -> int:
-    raw = os.environ.get("DASHBOARD_CHART_TTL_SEC", str(TTL_DEFAULT))
-    try:
-        return max(60, int(raw))
-    except (TypeError, ValueError):
-        return TTL_DEFAULT
+def chart_ttl_sec(*, now: Optional[datetime] = None) -> int:
+    raw = os.environ.get("DASHBOARD_CHART_TTL_SEC")
+    if raw not in (None, ""):
+        try:
+            return max(30, int(raw))
+        except (TypeError, ValueError):
+            pass
+    return TTL_SESSION_SEC if in_chart_session(now) else TTL_OFFHOURS_SEC
 
 
 def safe_chart_name(name: str) -> Optional[str]:
@@ -131,34 +150,40 @@ def ledger_covers_date(led: dict, target: date) -> bool:
 
 
 def load_ledger_for_date(root: Path, target: date) -> Optional[dict]:
-    """Archive first, then live day_ledger when its date/session_date matches."""
+    """Ledger for *target only*. Never walks back to the last day-with-fills.
+
+    Prefer live ``day_ledger.json`` when it matches (realtime). Same-date
+    archive is a fallback. Previous-day files are ignored.
+    """
     if not root.is_dir():
         return None
+    live = root / "day_ledger.json"
+    if live.is_file():
+        led = read_json(live, None)
+        if isinstance(led, dict):
+            if ledger_covers_date(led, target):
+                return led
+            # Undated live file counts only for Seoul calendar-today.
+            if not led.get("date") and not led.get("session_date"):
+                if target == now_seoul().date():
+                    out = dict(led)
+                    out["date"] = target.isoformat()
+                    return out
+
     ymd = _ymd(target)
     archive = root / "ledger_archive" / f"day_ledger-{ymd}.json"
-    if archive.is_file():
-        led = read_json(archive, None)
-        if isinstance(led, dict) and (ledger_covers_date(led, target) or "fills" in led or "meta" in led):
-            if not led.get("date") and not led.get("session_date"):
-                led = dict(led)
-                led["date"] = target.isoformat()
-            return led
-
-    live = root / "day_ledger.json"
-    if not live.is_file():
+    if not archive.is_file():
         return None
-    led = read_json(live, None)
+    led = read_json(archive, None)
     if not isinstance(led, dict):
         return None
-    if ledger_covers_date(led, target):
-        return led
-    # Undated live file counts only for Seoul calendar-today.
+    claimed = str(led.get("date") or led.get("session_date") or "")
+    if claimed and claimed[:10] not in (target.isoformat(), ymd):
+        return None
     if not led.get("date") and not led.get("session_date"):
-        if target == now_seoul().date():
-            out = dict(led)
-            out["date"] = target.isoformat()
-            return out
-    return None
+        led = dict(led)
+        led["date"] = target.isoformat()
+    return led
 
 
 def parse_fill_tmd(fill: dict, *, fallback_date: date) -> Optional[str]:
@@ -307,18 +332,34 @@ def bars_cache_path(directory: Path, symbol: str, chart_date: date) -> Path:
 
 
 def load_cached_bars(directory: Path, symbol: str, chart_date: date) -> list[dict]:
+    want = _ymd(chart_date)
     data = read_json(bars_cache_path(directory, symbol, chart_date), None)
+    raw: list = []
     if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict) and x.get("time")]
-    if isinstance(data, dict) and isinstance(data.get("bars"), list):
-        return [x for x in data["bars"] if isinstance(x, dict) and x.get("time")]
-    return []
+        raw = data
+    elif isinstance(data, dict) and isinstance(data.get("bars"), list):
+        raw = data["bars"]
+    out = []
+    for x in raw:
+        if not isinstance(x, dict) or not x.get("time"):
+            continue
+        bd = str(x.get("date") or "").replace("-", "")
+        if bd and bd != want:
+            continue
+        out.append(x)
+    return out
 
 
 def save_cached_bars(directory: Path, symbol: str, chart_date: date, bars: list[dict]) -> None:
+    ymd = _ymd(chart_date)
+    stamped = []
+    for b in bars:
+        row = dict(b)
+        row["date"] = ymd
+        stamped.append(row)
     path = bars_cache_path(directory, symbol, chart_date)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(bars, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps(stamped, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
 
 
@@ -575,6 +616,7 @@ def empty_symbol_entry(symbol: str, chart_date: date, reason: str) -> dict:
         "sell_count": 0,
         "bar_count": 0,
         "fill_count": 0,
+        "no_fills": True,
         "empty_reason": reason,
     }
 
@@ -598,8 +640,13 @@ def empty_index(chart_date: date, reason: str = "not_built") -> dict:
     }
 
 
-def read_chart_index(directory: Optional[Path] = None) -> dict:
-    """Disk index only — never fetches KIS."""
+def read_chart_index(directory: Optional[Path] = None, *, live_date: Optional[date] = None) -> dict:
+    """Disk index only — never fetches KIS.
+
+    A previous session's index is always stale so the live PNG cannot stick
+    on yesterday when today still has zero fills.
+    """
+    live = live_date or seoul_chart_date()
     directory = charts_dir(directory)
     data = read_json(directory / "index.json", None)
     if isinstance(data, dict) and data.get("symbols"):
@@ -615,11 +662,13 @@ def read_chart_index(directory: Optional[Path] = None) -> dict:
                 stale = age > float(data.get("ttl_sec") or chart_ttl_sec())
             except ValueError:
                 stale = True
+        if str(data.get("date") or "") != live.isoformat():
+            stale = True
         data["stale"] = stale
         if "ok" not in data:
             data["ok"] = any((s or {}).get("available") for s in (data.get("symbols") or {}).values())
         return data
-    return empty_index(seoul_chart_date(), "not_built")
+    return empty_index(live, "not_built")
 
 
 def _resolve_bars(
@@ -685,6 +734,7 @@ def build_snapshots(
             symbols[sid] = empty_symbol_entry(sid, target, "root_missing")
             symbols[sid]["buy_count"] = buys
             symbols[sid]["sell_count"] = sells
+            symbols[sid]["no_fills"] = True
             continue
         if not bars:
             reason = "no_cached_bars" if skip_kis and fetch_bars is None else "no_bars"
@@ -692,6 +742,7 @@ def build_snapshots(
             entry["buy_count"] = buys
             entry["sell_count"] = sells
             entry["fill_count"] = len(markers)
+            entry["no_fills"] = len(markers) == 0
             symbols[sid] = entry
             continue
         if render_fn is None and not mpl_ok:
@@ -700,6 +751,7 @@ def build_snapshots(
             entry["sell_count"] = sells
             entry["fill_count"] = len(markers)
             entry["bar_count"] = len(bars)
+            entry["no_fills"] = len(markers) == 0
             symbols[sid] = entry
             continue
 
@@ -747,6 +799,7 @@ def build_snapshots(
             entry["sell_count"] = sells
             entry["fill_count"] = len(markers)
             entry["bar_count"] = len(bars)
+            entry["no_fills"] = len(markers) == 0
             symbols[sid] = entry
             continue
 
@@ -761,6 +814,7 @@ def build_snapshots(
             "sell_count": sells,
             "bar_count": len(bars),
             "fill_count": len(markers),
+            "no_fills": len(markers) == 0,
             "empty_reason": None,
         }
 
@@ -794,13 +848,14 @@ def get_or_build_charts(
     """
     if os.environ.get("DASHBOARD_SKIP_KIS", "").lower() in ("1", "true", "yes"):
         skip_kis = True
+    live = chart_date or seoul_chart_date()
     with _BUILD_LOCK:
-        current = read_chart_index(charts_dir_path)
+        current = read_chart_index(charts_dir_path, live_date=live)
         need = refresh or not current.get("generated_at") or current.get("stale")
         if not need:
             return current
         return build_snapshots(
-            chart_date=chart_date,
+            chart_date=live,
             charts_dir_path=charts_dir_path,
             roots=roots,
             skip_kis=skip_kis,
@@ -809,12 +864,26 @@ def get_or_build_charts(
         )
 
 
-def attach_charts(status: dict, directory: Optional[Path] = None) -> dict:
-    """Attach last-known chart index (no rebuild) onto a portfolio payload."""
-    idx = read_chart_index(directory)
+def attach_charts(
+    status: dict,
+    directory: Optional[Path] = None,
+    *,
+    live_date: Optional[date] = None,
+) -> dict:
+    """Attach last-known *live-session* chart index (no rebuild).
+
+    Previous-day snapshots stay on dated PNGs and are not advertised as live.
+    """
+    live = live_date or seoul_chart_date()
+    idx = read_chart_index(directory, live_date=live)
+    if str(idx.get("date") or "") != live.isoformat():
+        idx = empty_index(live, "stale_previous_session")
     status["charts"] = idx
     symbols = idx.get("symbols") or {}
     for b in status.get("bots") or []:
         bid = str(b.get("id") or "")
-        b["chart"] = symbols.get(bid) or empty_symbol_entry(bid or "?", seoul_chart_date(), "not_built")
+        entry = symbols.get(bid) or empty_symbol_entry(bid or "?", live, "not_built")
+        if str(entry.get("date") or "") != live.isoformat():
+            entry = empty_symbol_entry(bid or "?", live, "stale_previous_session")
+        b["chart"] = entry
     return status

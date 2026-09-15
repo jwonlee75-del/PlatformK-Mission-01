@@ -541,17 +541,20 @@ function chartBlock(b) {
   const date = ch.date || "";
   const buys = ch.buy_count;
   const sells = ch.sell_count;
+  const noFills = !!ch.no_fills || ((Number(buys) || 0) + (Number(sells) || 0) === 0);
+  const fillMeta = noFills ? "체결 없음" : `매수 ${fmtNum(buys)} / 매도 ${fmtNum(sells)}`;
+  const fillCap = noFills ? "체결 없음" : `BUY ▲ ${fmtNum(buys)} / SELL ▼ ${fmtNum(sells)}`;
   if (ch.available && ch.url) {
     const bust = encodeURIComponent(ch.generated_at || date || "");
     const zoom = ch.zoom_url
       ? `<img class="chart-img" src="${esc(ch.zoom_url)}?t=${bust}" alt="${esc(b.id)} morning 1m trades">`
       : "";
     return `<section class="panel chart-panel" style="box-shadow:none">
-      <h2>당일 1분 차트 <span class="meta">${esc(date)} · 매수 ${fmtNum(buys)} / 매도 ${fmtNum(sells)}</span></h2>
+      <h2>당일 1분 차트 <span class="meta">${esc(date)} · ${fillMeta}</span></h2>
       <figure class="chart-snap">
         <img class="chart-img" src="${esc(ch.url)}?t=${bust}" alt="${esc(b.id)} 1m BUY/SELL">
         ${zoom}
-        <figcaption>${esc(date)} · BUY ▲ ${fmtNum(buys)} / SELL ▼ ${fmtNum(sells)}</figcaption>
+        <figcaption>${esc(date)} · ${fillCap}</figcaption>
       </figure>
     </section>`;
   }
@@ -563,6 +566,7 @@ function chartBlock(b) {
     matplotlib_unavailable: "matplotlib 없음 · 차트 생략",
     root_missing: "봇 경로 없음",
     render_failed: "렌더 실패",
+    stale_previous_session: "이전 거래일 스냅샷 · 당일 재생성 대기",
   }[reason] || reason;
   return `<section class="panel chart-panel" style="box-shadow:none">
     <h2>당일 1분 차트</h2>
