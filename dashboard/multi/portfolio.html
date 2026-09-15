@@ -286,8 +286,8 @@ function winRateView(wr) {
   const pct = Number(wr.win_rate_pct);
   const cls = pct > 50 ? "pos" : (pct < 50 ? "neg" : "");
   const even = wr.breakeven ? ` · 본전 ${fmtNum(wr.breakeven)}` : "";
-  const days = wr.days ? ` · ${fmtNum(wr.days)}일` : "";
   const bots = (wr.bots && wr.bots.length) ? ` · ${wr.bots.join(" + ")}` : "";
+  const days = !bots && wr.days ? ` · ${fmtNum(wr.days)}일` : "";
   return {
     text: pct.toFixed(1) + "%",
     cls,
